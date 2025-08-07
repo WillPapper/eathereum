@@ -55,6 +55,56 @@ struct StablecoinMonitor {
 }
 
 impl StablecoinMonitor {
+    async fn connect_to_redis_with_retry(
+        redis_url: &str,
+        max_retries: u32,
+    ) -> Option<MultiplexedConnection> {
+        let mut retry_count = 0;
+        let mut delay = Duration::from_secs(1);
+
+        loop {
+            match RedisClient::open(redis_url) {
+                Ok(client) => match client.get_multiplexed_tokio_connection().await {
+                    Ok(conn) => {
+                        info!(
+                            "Connected to Redis successfully after {} retries",
+                            retry_count
+                        );
+                        return Some(conn);
+                    }
+                    Err(e) => {
+                        if retry_count >= max_retries {
+                            warn!("Failed to connect to Redis after {} retries: {}. Running without Redis.", max_retries, e);
+                            return None;
+                        }
+                        warn!(
+                            "Redis connection attempt {} failed: {}. Retrying in {:?}...",
+                            retry_count + 1,
+                            e,
+                            delay
+                        );
+                    }
+                },
+                Err(e) => {
+                    if retry_count >= max_retries {
+                        warn!("Failed to create Redis client after {} retries: {}. Running without Redis.", max_retries, e);
+                        return None;
+                    }
+                    warn!(
+                        "Redis client creation attempt {} failed: {}. Retrying in {:?}...",
+                        retry_count + 1,
+                        e,
+                        delay
+                    );
+                }
+            }
+
+            tokio::time::sleep(delay).await;
+            retry_count += 1;
+            delay = std::cmp::min(delay * 2, Duration::from_secs(30)); // Exponential backoff with max 30s
+        }
+    }
+
     async fn new(
         rpc_url: String,
         tx_broadcaster: broadcast::Sender<TransactionData>,
@@ -90,27 +140,9 @@ impl StablecoinMonitor {
         // Get current block number
         let current_block = provider.get_block_number().await?;
 
-        // Connect to Redis if URL is provided
+        // Connect to Redis with connection manager for automatic reconnection
         let redis_conn = if let Ok(redis_url) = env::var("REDIS_URL") {
-            match RedisClient::open(redis_url.as_str()) {
-                Ok(client) => match client.get_multiplexed_tokio_connection().await {
-                    Ok(conn) => {
-                        info!("Connected to Redis successfully");
-                        Some(conn)
-                    }
-                    Err(e) => {
-                        warn!("Failed to connect to Redis: {}. Running without Redis.", e);
-                        None
-                    }
-                },
-                Err(e) => {
-                    warn!(
-                        "Failed to create Redis client: {}. Running without Redis.",
-                        e
-                    );
-                    None
-                }
-            }
+            Self::connect_to_redis_with_retry(&redis_url, 3).await
         } else {
             info!("REDIS_URL not set, running without Redis");
             None
@@ -258,29 +290,86 @@ impl StablecoinMonitor {
         if let Some(mut conn) = self.redis_conn.clone() {
             // Serialize transaction data
             if let Ok(json_data) = serde_json::to_string(tx_data) {
-                // Publish to Redis channel for real-time updates
+                // Use Redis Streams for reliable message delivery
+                let stream_key = "stablecoin:stream:all";
+                let stablecoin_stream =
+                    format!("stablecoin:stream:{}", tx_data.stablecoin.to_lowercase());
+
+                // Create entries for the stream
+                let block_str = tx_data.block_number.to_string();
+                let entries = vec![
+                    ("data", json_data.as_str()),
+                    ("stablecoin", &tx_data.stablecoin),
+                    ("amount", &tx_data.amount),
+                    ("from", &tx_data.from),
+                    ("to", &tx_data.to),
+                    ("block", &block_str),
+                    ("tx_hash", &tx_data.tx_hash),
+                ];
+
+                // Add to main stream with automatic trimming to last 10000 entries
+                if let Err(e) = redis::cmd("XADD")
+                    .arg(&stream_key)
+                    .arg("MAXLEN")
+                    .arg("~")
+                    .arg(10000)
+                    .arg("*")
+                    .arg(&entries)
+                    .query_async::<String>(&mut conn)
+                    .await
+                {
+                    error!("Failed to add to Redis stream {}: {}", stream_key, e);
+                }
+
+                // Add to stablecoin-specific stream
+                if let Err(e) = redis::cmd("XADD")
+                    .arg(&stablecoin_stream)
+                    .arg("MAXLEN")
+                    .arg("~")
+                    .arg(5000)
+                    .arg("*")
+                    .arg(&entries)
+                    .query_async::<String>(&mut conn)
+                    .await
+                {
+                    error!("Failed to add to Redis stream {}: {}", stablecoin_stream, e);
+                }
+
+                // Still publish to pub/sub for backward compatibility
                 let channel = "stablecoin:transactions";
                 if let Err(e) = conn.publish::<_, _, ()>(channel, &json_data).await {
                     error!("Failed to publish to Redis channel: {}", e);
                 }
 
-                // Also store in a Redis list for persistence (keep last 1000 transactions)
-                let list_key = "stablecoin:recent_transactions";
-                if let Err(e) = conn.lpush::<_, _, ()>(list_key, &json_data).await {
-                    error!("Failed to push to Redis list: {}", e);
-                } else {
-                    // Trim list to keep only recent transactions
-                    let _ = conn.ltrim::<_, ()>(list_key, 0, 999).await;
+                // Store in sorted set by block number for range queries
+                let sorted_set = format!("stablecoin:blocks:{}", tx_data.stablecoin.to_lowercase());
+                if let Err(e) = conn
+                    .zadd::<_, _, _, ()>(&sorted_set, &json_data, tx_data.block_number as f64)
+                    .await
+                {
+                    error!("Failed to add to sorted set: {}", e);
                 }
 
-                // Store transaction by hash for lookup
+                // Store transaction by hash for lookup with longer TTL
                 let hash_key = format!("stablecoin:tx:{}", tx_data.tx_hash);
                 if let Err(e) = conn
-                    .set_ex::<_, _, ()>(hash_key, &json_data, 3600) // Expire after 1 hour
+                    .set_ex::<_, _, ()>(hash_key, &json_data, 7200) // Expire after 2 hours
                     .await
                 {
                     error!("Failed to store transaction in Redis: {}", e);
                 }
+
+                // Update statistics
+                let stats_key = format!("stablecoin:stats:{}", tx_data.stablecoin.to_lowercase());
+                let _ = conn
+                    .hincr::<_, _, _, i64>(&stats_key, "total_transactions", 1)
+                    .await;
+                let _ = conn
+                    .hset::<_, _, _, ()>(&stats_key, "last_block", tx_data.block_number)
+                    .await;
+                let _ = conn
+                    .hset::<_, _, _, ()>(&stats_key, "last_tx_hash", &tx_data.tx_hash)
+                    .await;
             }
         }
     }
