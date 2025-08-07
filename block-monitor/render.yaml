@@ -2,9 +2,9 @@ services:
   # Background worker that continuously monitors blockchain
   - type: worker
     name: block-monitor
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: ./block-monitor
+    runtime: rust
+    buildCommand: cargo build --release
+    startCommand: ./target/release/block-monitor
     envVars:
       - key: RPC_URL
         sync: false  # Set this in Render dashboard
@@ -15,6 +15,7 @@ services:
       - key: RUST_LOG
         value: info
     autoDeploy: true  # Auto-deploy enabled - will deploy on every push to main branch
+    pullRequestPreviewsEnabled: true  # Enable PR previews
     
   # Optional: Separate web service for WebSocket connections
   # Uncomment if you want to split WebSocket server from monitor
