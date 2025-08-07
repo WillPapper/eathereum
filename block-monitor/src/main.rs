@@ -1,28 +1,23 @@
 use alloy::{
-    network::EthereumWallet,
+    consensus::Transaction as _,
+    network::TransactionResponse,
     primitives::{address, Address, U256},
     providers::{Provider, ProviderBuilder},
-    rpc::types::{Block, Transaction},
+    rpc::types::{Block, BlockTransactionsKind, Transaction},
     sol,
     sol_types::SolCall,
 };
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{HashMap, HashSet},
-    env,
-    net::SocketAddr,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, env, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{broadcast, RwLock},
     time,
 };
 use tokio_tungstenite::{accept_async, tungstenite::Message};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 // Known stablecoin addresses on Base network (Chain ID: 8453)
 // Source: Base official token list and Base docs
@@ -31,7 +26,8 @@ const USDC_ADDRESS: Address = address!("833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 const USDT_ADDRESS: Address = address!("fde4C96c8593536E31F229EA8f37b2ADa2699bb2"); // USDT on Base
 const DAI_ADDRESS: Address = address!("50c5725949A6F0c72E6C4a641F24049A917DB0Cb"); // DAI on Base
 
-// ERC20 Transfer event signature
+// ERC20 Transfer event signature (kept for future use with event logs)
+#[allow(dead_code)]
 const TRANSFER_EVENT_SIGNATURE: &str =
     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
@@ -139,7 +135,7 @@ impl StablecoinMonitor {
             // Get block with transactions
             if let Some(block) = self
                 .provider
-                .get_block_by_number(last_processed.into(), true)
+                .get_block_by_number(last_processed.into(), BlockTransactionsKind::Full)
                 .await?
             {
                 self.process_block(block).await?;
@@ -153,7 +149,7 @@ impl StablecoinMonitor {
     }
 
     async fn process_block(&self, block: Block) -> Result<()> {
-        let block_number = block.header.number.unwrap_or_default();
+        let block_number = block.header.number;
 
         // Process each transaction in the block
         for tx in block.transactions.into_transactions() {
@@ -182,7 +178,7 @@ impl StablecoinMonitor {
     fn parse_stablecoin_transaction(
         &self,
         tx: &Transaction,
-        token_address: Address,
+        _token_address: Address,
         stablecoin_info: &StablecoinInfo,
         block_number: u64,
     ) -> Option<TransactionData> {
@@ -198,7 +194,7 @@ impl StablecoinMonitor {
         // transfer(address,uint256) - 0xa9059cbb
         if selector == [0xa9, 0x05, 0x9c, 0xbb] && input.len() >= 68 {
             // Decode transfer
-            if let Ok(decoded) = transferCall::abi_decode(&input, false) {
+            if let Ok(decoded) = transferCall::abi_decode(input, false) {
                 let amount = self.format_amount(decoded.amount, stablecoin_info.decimals);
                 return Some(TransactionData {
                     stablecoin: stablecoin_info.name.to_string(),
@@ -206,7 +202,7 @@ impl StablecoinMonitor {
                     from: format!("{:?}", tx.from),
                     to: format!("{:?}", decoded.to),
                     block_number,
-                    tx_hash: format!("{:?}", tx.hash),
+                    tx_hash: format!("{:?}", tx.tx_hash()),
                 });
             }
         }
@@ -214,7 +210,7 @@ impl StablecoinMonitor {
         // transferFrom(address,address,uint256) - 0x23b872dd
         if selector == [0x23, 0xb8, 0x72, 0xdd] && input.len() >= 100 {
             // Decode transferFrom
-            if let Ok(decoded) = transferFromCall::abi_decode(&input, false) {
+            if let Ok(decoded) = transferFromCall::abi_decode(input, false) {
                 let amount = self.format_amount(decoded.amount, stablecoin_info.decimals);
                 return Some(TransactionData {
                     stablecoin: stablecoin_info.name.to_string(),
@@ -222,7 +218,7 @@ impl StablecoinMonitor {
                     from: format!("{:?}", decoded.from),
                     to: format!("{:?}", decoded.to),
                     block_number,
-                    tx_hash: format!("{:?}", tx.hash),
+                    tx_hash: format!("{:?}", tx.tx_hash()),
                 });
             }
         }
