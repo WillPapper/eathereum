@@ -41,39 +41,50 @@ Source: [Base Official Documentation](https://docs.base.org/)
 
 ## Deployment on Render.com
 
-### As a Cron Job
+### As a Background Worker (Recommended)
+
+The server runs as a continuous background worker that polls every 2 seconds:
 
 1. **Fork/Clone Repository**
    - Push code to your GitHub repository
 
-2. **Create Render Service**
+2. **Create Background Worker**
    - Go to [Render Dashboard](https://dashboard.render.com)
-   - Click "New +" → "Cron Job"
+   - Click "New +" → "Background Worker"
    - Connect your GitHub repository
    - Use these settings:
      - **Name**: stablecoin-monitor
      - **Runtime**: Docker
-     - **Schedule**: `*/2 * * * *` (every 2 minutes)
      - **Docker Context Directory**: `./stablecoin-server`
      - **Dockerfile Path**: `./Dockerfile`
 
 3. **Set Environment Variables**
-   - `ALCHEMY_RPC_URL`: Your Alchemy API URL with key
-   - `PORT`: 8080 (or your preferred port)
+   - `ALCHEMY_RPC_URL`: Your Alchemy Base network API URL with key
+   - `PORT`: 8080 (WebSocket port)
+   - `HEALTH_PORT`: 8081 (Health check port)
    - `RUST_LOG`: info
 
-### As a Web Service
+4. **Deploy**
+   - The worker will start automatically and run continuously
+   - It polls the blockchain every 2 seconds
+   - WebSocket server runs on port 8080 for client connections
 
-For continuous monitoring (recommended):
+### Alternative: Using render.yaml
 
-1. **Create Web Service**
-   - Use `render.yaml` configuration
-   - Or create manually with same Docker settings
-   - Set as "Web Service" instead of "Cron Job"
+Deploy directly using the provided configuration:
 
-2. **Health Checks**
-   - Health endpoint: `http://your-service.onrender.com:8081/health`
-   - Returns 200 OK when service is running
+```bash
+# Push render.yaml to your repo, then in Render:
+# 1. New → Blueprint
+# 2. Connect your repo
+# 3. Render will auto-detect render.yaml
+```
+
+### Monitoring
+
+- Worker logs show block processing and found transactions
+- Health endpoint available at port 8081
+- WebSocket connections logged in real-time
 
 ## WebSocket Message Format
 

@@ -107,13 +107,18 @@ impl StablecoinMonitor {
     }
 
     async fn start_monitoring(&self) {
+        // Create interval timer for polling every 2 seconds
+        // This runs continuously as a background worker
         let mut interval = time::interval(Duration::from_secs(2));
+        
+        info!("Starting blockchain monitoring loop (polling every 2 seconds)");
         
         loop {
             interval.tick().await;
             
             if let Err(e) = self.check_new_blocks().await {
                 error!("Error checking blocks: {}", e);
+                // Continue running even on errors - don't crash the worker
             }
         }
     }
@@ -326,6 +331,9 @@ async fn main() -> Result<()> {
         )
         .init();
     
+    // Set up graceful shutdown
+    let shutdown = tokio::signal::ctrl_c();
+    
     // Get RPC URL from environment or use default
     // MUST be a Base network RPC endpoint (not Ethereum mainnet)
     let rpc_url = env::var("ALCHEMY_RPC_URL")
@@ -361,7 +369,7 @@ async fn main() -> Result<()> {
         monitor.start_monitoring().await;
     });
     
-    // Wait for tasks
+    // Wait for tasks or shutdown signal
     tokio::select! {
         _ = ws_handle => {
             error!("WebSocket server stopped");
@@ -372,7 +380,11 @@ async fn main() -> Result<()> {
         _ = monitor_handle => {
             error!("Monitor stopped");
         }
+        _ = shutdown => {
+            info!("Received shutdown signal, stopping gracefully...");
+        }
     }
     
+    info!("Server shutdown complete");
     Ok(())
 }
