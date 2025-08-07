@@ -1,5 +1,6 @@
+use alloy_consensus::{EthereumTxEnvelope, Transaction};
 use alloy_eips::eip2718::Typed2718;
-use alloy_primitives::{BlockNumber};
+use alloy_primitives::{BlockNumber, U256, Bytes};
 use clap::{Args, Parser};
 use eyre::OptionExt;
 use futures::{FutureExt, StreamExt};
@@ -117,23 +118,70 @@ where
                     .copied()
                     .unwrap_or_default();
                 
-                // Extract transaction data - we can get this from the execution outcome
-                // The chain contains both blocks and their execution outcomes
-                // For direct transaction data, we'd need to decode the envelope
-                // Let's at least try to get the basic transaction type
+                // Extract transaction data - we need to match on the envelope variant
                 let tx_type = transaction.ty();
                 
-                // Log transaction details
+                // Extract to, value, and input based on transaction type
+                // The transaction envelope contains different variants for different transaction types
+                let (to, value, input) = match transaction {
+                    EthereumTxEnvelope::Legacy(tx) => {
+                        (tx.tx().to(), tx.tx().value(), tx.tx().input())
+                    }
+                    EthereumTxEnvelope::Eip2930(tx) => {
+                        (tx.tx().to(), tx.tx().value(), tx.tx().input())
+                    }
+                    EthereumTxEnvelope::Eip1559(tx) => {
+                        (tx.tx().to(), tx.tx().value(), tx.tx().input())
+                    }
+                    EthereumTxEnvelope::Eip4844(tx) => {
+                        (tx.tx().to(), tx.tx().value(), tx.tx().input())
+                    }
+                    _ => {
+                        // Other transaction types we might not handle yet
+                        (None, U256::ZERO, &Bytes::new())
+                    }
+                };
+                
+                // Log full transaction details
                 info!(
                     block = %block_number,
                     tx_index = %tx_index,
                     tx_hash = ?tx_hash,
                     from = ?sender,
+                    to = ?to,
+                    value = ?value,
+                    input_len = %input.len(),
+                    input_first_4_bytes = ?input.get(0..4).map(|b| format!("0x{}", hex::encode(b))),
                     tx_type = %tx_type,
-                    "Processing transaction"
+                    "Processing transaction with full data"
                 );
                 
-                // Access transaction receipts from the execution outcome for actual data
+                // TODO: Parse transaction input data to identify stablecoin operations
+                // Common ERC20 function selectors (first 4 bytes of input):
+                // - 0xa9059cbb: transfer(address,uint256)
+                // - 0x23b872dd: transferFrom(address,address,uint256)
+                // - 0x095ea7b3: approve(address,uint256)
+                // - 0x70a08231: balanceOf(address)
+                // - 0x18160ddd: totalSupply()
+                
+                // Check if this is a potential stablecoin transaction
+                // Known stablecoin addresses:
+                // - USDT: 0xdac17f958d2ee523a2206206994597c13d831ec7
+                // - USDC: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+                // - DAI: 0x6b175474e89094c44da98b954eedeac495271d0f
+                
+                if let Some(to_addr) = to {
+                    let to_addr_lower = format!("{:?}", to_addr).to_lowercase();
+                    if to_addr_lower.contains("dac17f958d2ee523a2206206994597c13d831ec7") {
+                        info!("Found USDT transaction!");
+                    } else if to_addr_lower.contains("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48") {
+                        info!("Found USDC transaction!");
+                    } else if to_addr_lower.contains("6b175474e89094c44da98b954eedeac495271d0f") {
+                        info!("Found DAI transaction!");
+                    }
+                }
+                
+                // Access transaction receipts from the execution outcome for event logs
                 // The execution outcome contains receipts for each block
                 // Note: receipts are grouped by block, not individual transactions
                 
@@ -143,13 +191,6 @@ where
                 // - Transfer events (topic0: 0xddf252ad...)
                 // - Approval events
                 // - Mint/Burn events for stablecoins
-
-                // TODO: In next step, we'll parse transactions to identify:
-                // - ERC20 transfers (Transfer event - selector 0xa9059cbb)
-                // - ERC20 transferFrom (selector 0x23b872dd)
-                // - Stablecoin contracts (USDT, USDC, DAI, etc.)
-                // - Mints and burns
-                // - Other relevant stablecoin operations
             }
         }
 
