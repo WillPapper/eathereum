@@ -3,7 +3,7 @@
 ## Project Overview
 This project consists of three main components:
 1. **Block Monitor**: A Rust server using Alloy that monitors Base network for stablecoin transactions and publishes to Redis
-2. **Redis Stream Consumer**: A Rust microservice that consumes from Redis streams and broadcasts via WebSocket
+2. **Game Server**: A Rust microservice that consumes from Redis streams and broadcasts via WebSocket to game clients
 3. **Visualizer**: A Three.js-based game that visualizes blockchain activity as an ecosystem where players interact with animals representing transactions
 
 ## Current Architecture
@@ -17,7 +17,7 @@ stablecoin-visualizer/
 │   ├── Cargo.toml         # Dependencies (Alloy, Tokio, Redis)
 │   ├── render.yaml        # Render.com native Rust deployment config
 │   └── README.md          # Server documentation
-├── redis-stream-consumer/  # Redis to WebSocket bridge service
+├── game-server/           # Game server with Redis consumer and WebSocket
 │   ├── src/
 │   │   └── main.rs        # Redis stream consumer with WebSocket server
 │   ├── Cargo.toml         # Dependencies (Redis, Tokio, WebSocket)
@@ -30,7 +30,7 @@ stablecoin-visualizer/
 ├── .github/
 │   └── workflows/
 │       ├── block-monitor.yml         # CI/CD for block monitor
-│       └── redis-stream-consumer.yml  # CI/CD for Redis consumer
+│       └── game-server.yml            # CI/CD for game server
 ├── .githooks/
 │   └── pre-commit        # Auto-runs cargo fmt on commits
 └── setup-hooks.sh        # One-time Git hooks setup
@@ -152,10 +152,10 @@ transferCall::abi_decode(input, false) // Not &input
   startCommand: ./target/release/block-monitor
   ```
 
-## Redis Stream Consumer
+## Game Server
 
 ### Purpose
-Bridges the gap between Redis streams and WebSocket clients, enabling real-time transaction updates for web applications.
+Bridges the gap between Redis streams and game clients, providing real-time transaction data for the visualizer game.
 
 ### Key Features
 - **Redis Consumer Groups**: Reliable message processing with acknowledgments
@@ -175,7 +175,7 @@ HEALTH_PORT=8081          # Health checks
 
 ### Data Flow
 1. Block Monitor publishes transactions to Redis stream
-2. Redis Stream Consumer reads using consumer groups
+2. Game Server reads using consumer groups
 3. Acknowledges messages after successful broadcast
 4. Broadcasts JSON data to all WebSocket clients
 

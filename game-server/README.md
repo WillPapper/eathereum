@@ -1,6 +1,6 @@
-# Redis Stream Consumer
+# Game Server
 
-A Rust microservice that consumes stablecoin transaction data from Redis streams and broadcasts it to connected WebSocket clients.
+A Rust game server that consumes stablecoin transaction data from Redis streams and broadcasts it to connected game clients via WebSocket.
 
 ## Architecture
 

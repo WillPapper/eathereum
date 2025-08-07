@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
     dotenv::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    info!("Starting Redis Stream Consumer service");
+    info!("Starting Game Server");
 
     let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string());
     let port = std::env::var("PORT")
