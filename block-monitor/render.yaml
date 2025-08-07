@@ -15,6 +15,7 @@ services:
       - key: RUST_LOG
         value: info
     autoDeploy: true  # Auto-deploy enabled - will deploy on every push to main branch
+    pullRequestPreviewsEnabled: true  # Enable PR previews
     
   # Optional: Separate web service for WebSocket connections
   # Uncomment if you want to split WebSocket server from monitor
