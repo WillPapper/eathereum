@@ -185,12 +185,12 @@ button:active {
     background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
 }
 
-#fly-btn {
+#play-btn {
     background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
     font-size: 16px;
 }
 
-#fly-btn.active {
+#play-btn.active {
     background: linear-gradient(135deg, #ff6b6b 0%, #ff5252 100%);
     animation: pulse 2s infinite;
 }
@@ -207,11 +207,14 @@ button:active {
     }
 }
 
-#flight-status {
+#game-status {
     text-align: center;
     margin-top: 10px;
     font-size: 14px;
-    animation: float 3s ease-in-out infinite;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    line-height: 1.6;
 }
 
 @keyframes float {

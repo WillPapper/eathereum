@@ -4,20 +4,21 @@ let particles = [];
 let isPaused = false;
 let ws = null;
 
-// Bird flight controls
-let birdControls = {
+// Player controls (ground-based animal)
+let playerControls = {
     moveForward: false,
     moveBackward: false,
     moveLeft: false,
     moveRight: false,
-    moveUp: false,
-    moveDown: false,
     boost: false,
     velocity: new THREE.Vector3(),
-    rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
+    rotation: 0,
     mouseX: 0,
     mouseY: 0,
-    isFlying: false
+    isPlaying: false,
+    size: 1.0,  // Player's current size
+    mesh: null,  // Player's 3D model
+    speed: 10   // Base movement speed
 };
 
 // Game state
@@ -657,24 +658,44 @@ class TransactionAnimal {
         
         if (!this.isAlive || isPaused) return true;
         
-        // Check distance to bird for fleeing behavior
-        const distanceToBird = camera.position.distanceTo(this.mesh.position);
+        // Update threat indicator based on player size
+        this.updateThreatIndicator();
         
-        // Flee if bird is close
-        if (birdControls.isFlying && distanceToBird < this.fleeRadius) {
-            // Calculate flee direction (away from bird)
-            const fleeDirection = new THREE.Vector3();
-            fleeDirection.subVectors(this.mesh.position, camera.position);
-            fleeDirection.y = 0; // Keep on ground plane
-            fleeDirection.normalize();
+        // Check distance to player for behavior
+        if (playerControls.mesh) {
+            const distanceToPlayer = playerControls.mesh.position.distanceTo(this.mesh.position);
             
-            this.targetDirection = Math.atan2(fleeDirection.x, fleeDirection.z);
-            this.speed = Math.min(this.speed * 1.5, 30); // Panic speed
-            
-            // Random jump when fleeing
-            if (this.jumpCooldown <= 0 && Math.random() < 0.1) {
-                this.velocity.y = 5 + Math.random() * 5;
-                this.jumpCooldown = 60;
+            // Different behaviors based on relative size
+            if (playerControls.isPlaying && distanceToPlayer < this.fleeRadius) {
+                if (this.size < playerControls.size * 0.8) {
+                    // Smaller than player - flee!
+                    const fleeDirection = new THREE.Vector3();
+                    fleeDirection.subVectors(this.mesh.position, playerControls.mesh.position);
+                    fleeDirection.y = 0;
+                    fleeDirection.normalize();
+                    
+                    this.targetDirection = Math.atan2(fleeDirection.x, fleeDirection.z);
+                    this.speed = Math.min(this.speed * 1.5, 30); // Panic speed
+                    
+                    // Jump when fleeing
+                    if (this.jumpCooldown <= 0 && Math.random() < 0.1) {
+                        this.velocity.y = 5 + Math.random() * 5;
+                        this.jumpCooldown = 60;
+                    }
+                } else if (this.size > playerControls.size * 1.2) {
+                    // Larger than player - chase!
+                    const chaseDirection = new THREE.Vector3();
+                    chaseDirection.subVectors(playerControls.mesh.position, this.mesh.position);
+                    chaseDirection.y = 0;
+                    chaseDirection.normalize();
+                    
+                    this.targetDirection = Math.atan2(chaseDirection.x, chaseDirection.z);
+                    this.speed = Math.min(this.speed * 1.2, 25);
+                }
+            } else {
+                // Wander randomly
+                this.targetDirection += (Math.random() - 0.5) * this.turnSpeed;
+                this.speed = 5 + Math.random() * 5;
             }
         } else {
             // Wander randomly
@@ -729,7 +750,52 @@ class TransactionAnimal {
         return this.isAlive;
     }
     
-    // Called when eaten by bird
+    // Update threat indicator based on player size
+    updateThreatIndicator() {
+        if (!playerControls.isPlaying) {
+            // Remove indicators when not playing
+            if (this.indicator) {
+                this.mesh.remove(this.indicator);
+                this.indicator.geometry.dispose();
+                this.indicator.material.dispose();
+                this.indicator = null;
+            }
+            return;
+        }
+        
+        // Determine if prey (blue), neutral (yellow), or predator (red)
+        let indicatorColor;
+        if (this.size < playerControls.size * 0.8) {
+            indicatorColor = 0x4A90E2; // Blue - can eat
+        } else if (this.size > playerControls.size * 1.2) {
+            indicatorColor = 0xFF0000; // Red - dangerous!
+        } else {
+            indicatorColor = 0xFFFF00; // Yellow - similar size
+        }
+        
+        // Create or update indicator
+        if (!this.indicator) {
+            const indicatorGeometry = new THREE.RingGeometry(this.size * 1.5, this.size * 1.8, 8);
+            const indicatorMaterial = new THREE.MeshBasicMaterial({
+                color: indicatorColor,
+                transparent: true,
+                opacity: 0.5,
+                side: THREE.DoubleSide
+            });
+            this.indicator = new THREE.Mesh(indicatorGeometry, indicatorMaterial);
+            this.indicator.rotation.x = -Math.PI / 2;
+            this.indicator.position.y = 0.1;
+            this.mesh.add(this.indicator);
+        } else {
+            this.indicator.material.color.set(indicatorColor);
+        }
+        
+        // Pulse indicator for emphasis
+        const pulse = Math.sin(Date.now() * 0.005) * 0.2 + 0.5;
+        this.indicator.material.opacity = pulse;
+    }
+    
+    // Called when eaten
     consume() {
         this.isAlive = false;
         // Return the value consumed
@@ -737,6 +803,12 @@ class TransactionAnimal {
     }
     
     dispose() {
+        if (this.indicator) {
+            this.mesh.remove(this.indicator);
+            this.indicator.geometry.dispose();
+            this.indicator.material.dispose();
+        }
+        
         this.mesh.traverse((child) => {
             if (child.geometry) child.geometry.dispose();
             if (child.material) {
@@ -753,6 +825,258 @@ class TransactionAnimal {
 // Garden elements storage
 let gardenElements = [];
 let animals = []; // Track animals separately for collision detection
+
+// Create player animal
+function createPlayer() {
+    if (playerControls.mesh) {
+        scene.remove(playerControls.mesh);
+        playerControls.mesh.traverse((child) => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+        });
+    }
+    
+    // Create player as a special colored animal
+    const playerGroup = new THREE.Group();
+    
+    // Body (sphere that will grow)
+    const bodyGeometry = new THREE.SphereGeometry(playerControls.size, 8, 6);
+    const bodyMaterial = new THREE.MeshPhongMaterial({
+        color: 0x9B59B6, // Purple for player
+        emissive: 0x9B59B6,
+        emissiveIntensity: 0.2
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.position.y = playerControls.size;
+    body.castShadow = true;
+    playerGroup.add(body);
+    
+    // Eyes to show direction
+    for (let i = -1; i <= 1; i += 2) {
+        const eyeGeometry = new THREE.SphereGeometry(playerControls.size * 0.15, 4, 4);
+        const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFFFF });
+        const eye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        eye.position.set(playerControls.size * 0.6, playerControls.size * 1.2, i * playerControls.size * 0.3);
+        playerGroup.add(eye);
+        
+        // Pupils
+        const pupilGeometry = new THREE.SphereGeometry(playerControls.size * 0.08, 4, 4);
+        const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        const pupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+        pupil.position.set(playerControls.size * 0.7, playerControls.size * 1.2, i * playerControls.size * 0.3);
+        playerGroup.add(pupil);
+    }
+    
+    // Add size indicator text (optional)
+    playerControls.mesh = playerGroup;
+    playerControls.mesh.position.set(0, -30 + playerControls.size, 0);
+    scene.add(playerControls.mesh);
+    
+    // Update camera to follow player
+    updateCameraFollow();
+}
+
+// Update camera to follow player
+function updateCameraFollow() {
+    if (!playerControls.isPlaying || !playerControls.mesh) return;
+    
+    // Third person camera following player
+    const cameraDistance = 30 + playerControls.size * 5;
+    const cameraHeight = 15 + playerControls.size * 3;
+    
+    camera.position.x = playerControls.mesh.position.x - Math.sin(playerControls.rotation) * cameraDistance;
+    camera.position.y = playerControls.mesh.position.y + cameraHeight;
+    camera.position.z = playerControls.mesh.position.z - Math.cos(playerControls.rotation) * cameraDistance;
+    
+    camera.lookAt(playerControls.mesh.position);
+}
+
+// Update player movement
+function updatePlayerMovement(delta) {
+    if (!playerControls.isPlaying || gameOver || !playerControls.mesh) return;
+    
+    // Ground-based movement physics
+    const speed = playerControls.speed * (1 + playerControls.size * 0.1); // Bigger = slightly faster
+    
+    // Calculate movement direction based on camera
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    
+    camera.getWorldDirection(forward);
+    forward.y = 0;
+    forward.normalize();
+    
+    right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
+    
+    // Apply movement
+    const moveVector = new THREE.Vector3();
+    
+    if (playerControls.moveForward) moveVector.add(forward);
+    if (playerControls.moveBackward) moveVector.sub(forward);
+    if (playerControls.moveLeft) moveVector.sub(right);
+    if (playerControls.moveRight) moveVector.add(right);
+    
+    if (moveVector.length() > 0) {
+        moveVector.normalize();
+        moveVector.multiplyScalar(speed * delta);
+        
+        // Apply boost if shift is held
+        if (playerControls.boost) {
+            moveVector.multiplyScalar(2);
+        }
+        
+        // Update position
+        playerControls.mesh.position.add(moveVector);
+        
+        // Keep player on ground
+        playerControls.mesh.position.y = playerControls.size * 0.5 - 30;
+        
+        // Rotate player to face movement direction
+        if (moveVector.length() > 0.01) {
+            const targetRotation = Math.atan2(moveVector.x, moveVector.z);
+            playerControls.mesh.rotation.y = targetRotation;
+        }
+    }
+    
+    // Keep player in bounds
+    const boundary = 95;
+    playerControls.mesh.position.x = Math.max(-boundary, Math.min(boundary, playerControls.mesh.position.x));
+    playerControls.mesh.position.z = Math.max(-boundary, Math.min(boundary, playerControls.mesh.position.z));
+}
+
+// Check collision between player and animals/plants
+function checkCollisions() {
+    if (!playerControls.isPlaying || gameOver || !playerControls.mesh) return;
+    
+    const playerPos = playerControls.mesh.position;
+    const playerRadius = playerControls.size;
+    
+    // Check collisions with animals
+    for (let i = animals.length - 1; i >= 0; i--) {
+        const animal = animals[i];
+        const distance = playerPos.distanceTo(animal.mesh.position);
+        const collisionDistance = playerRadius + animal.size;
+        
+        if (distance < collisionDistance) {
+            if (animal.size < playerControls.size * 0.8) {
+                // Eat smaller animal
+                eatAnimal(animal, i);
+            } else if (animal.size > playerControls.size * 1.2) {
+                // Eaten by larger animal - game over
+                handleGameOver();
+                return;
+            }
+            // Similar size - just bounce off
+        }
+    }
+    
+    // Check collisions with plants (obstacles, not deadly)
+    plants.forEach(plant => {
+        const distance = playerPos.distanceTo(plant.mesh.position);
+        const collisionDistance = playerRadius + plant.size * 0.5;
+        
+        if (distance < collisionDistance) {
+            // Push player away from plant
+            const pushDirection = new THREE.Vector3()
+                .subVectors(playerPos, plant.mesh.position)
+                .normalize();
+            playerControls.mesh.position.add(pushDirection.multiplyScalar(collisionDistance - distance));
+        }
+    });
+}
+
+// Handle eating an animal
+function eatAnimal(animal, index) {
+    // Add to money collected
+    moneyCollected += animal.value;
+    
+    // Grow player size
+    const growthFactor = Math.log10(animal.value + 1) * 0.1;
+    playerControls.size = Math.min(playerControls.size + growthFactor, 10); // Max size of 10
+    
+    // Update player mesh scale
+    playerControls.mesh.scale.setScalar(playerControls.size);
+    playerControls.mesh.position.y = playerControls.size * 0.5 - 30;
+    
+    // Remove animal
+    scene.remove(animal.mesh);
+    scene.remove(animal.indicator);
+    animals.splice(index, 1);
+    
+    // Update UI
+    updateStats();
+    
+    // Play eat sound effect (visual feedback)
+    flashScreen(0x00ff00, 100);
+}
+
+// Flash screen effect
+function flashScreen(color, duration) {
+    const flash = document.createElement('div');
+    flash.style.position = 'fixed';
+    flash.style.top = '0';
+    flash.style.left = '0';
+    flash.style.width = '100%';
+    flash.style.height = '100%';
+    flash.style.backgroundColor = `#${color.toString(16).padStart(6, '0')}`;
+    flash.style.opacity = '0.3';
+    flash.style.pointerEvents = 'none';
+    flash.style.zIndex = '9999';
+    document.body.appendChild(flash);
+    
+    setTimeout(() => {
+        document.body.removeChild(flash);
+    }, duration);
+}
+
+// Handle game over
+function handleGameOver() {
+    gameOver = true;
+    playerControls.isPlaying = false;
+    
+    // Create game over screen
+    const gameOverDiv = document.createElement('div');
+    gameOverDiv.id = 'game-over';
+    gameOverDiv.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(255, 0, 0, 0.9);
+        color: white;
+        padding: 40px;
+        border-radius: 20px;
+        text-align: center;
+        font-size: 24px;
+        z-index: 10000;
+        box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
+    `;
+    
+    gameOverDiv.innerHTML = `
+        <h1 style="margin: 0 0 20px 0; font-size: 48px;">GAME OVER!</h1>
+        <p style="margin: 20px 0;">You were eaten by a larger animal!</p>
+        <p style="margin: 20px 0; font-size: 32px; color: #FFD700;">💰 Final Score: $${moneyCollected.toFixed(2)}</p>
+        <p style="margin: 10px 0; font-size: 18px;">Your Size: ${playerControls.size.toFixed(2)}</p>
+        <button onclick="location.reload()" style="
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 20px;
+            cursor: pointer;
+            margin-top: 20px;
+        ">🔄 Play Again</button>
+    `;
+    
+    document.body.appendChild(gameOverDiv);
+    
+    // Stop animation
+    if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+    }
+}
 
 // Initialize Three.js scene
 function init() {
@@ -1109,13 +1433,19 @@ function updateStats() {
 }
 
 // Animation loop
-function animate() {
-    requestAnimationFrame(animate);
+let lastTime = 0;
+let animationId;
+function animate(currentTime) {
+    animationId = requestAnimationFrame(animate);
     
-    // Update bird flight controls and check for collisions
-    if (birdControls.isFlying) {
-        updateBirdFlight();
-        checkBirdCollisions();
+    const delta = (currentTime - lastTime) / 1000;
+    lastTime = currentTime;
+    
+    // Update player controls and check for collisions
+    if (playerControls.isPlaying) {
+        updatePlayerMovement(delta || 0.016);
+        updateCameraFollow();
+        checkCollisions();
     }
     
     // Update plants (all plants are now persistent)
@@ -1139,8 +1469,8 @@ function animate() {
     if (!isPaused) {
         const time = Date.now() * 0.0001;
         
-        // Only do automatic camera movement if not in bird mode
-        if (!birdControls.isFlying) {
+        // Only do automatic camera movement if not in game mode
+        if (!playerControls.isPlaying) {
             // Gentle camera movement around garden
             camera.position.x = Math.cos(time) * 80;
             camera.position.z = Math.sin(time) * 80;
@@ -1590,7 +1920,7 @@ function setupEventListeners() {
     const pauseBtn = document.getElementById('pause-btn');
     const clearBtn = document.getElementById('clear-btn');
     const connectBtn = document.getElementById('connect-btn');
-    const flyBtn = document.getElementById('fly-btn');
+    const playBtn = document.getElementById('play-btn');
     
     pauseBtn.addEventListener('click', () => {
         isPaused = !isPaused;
@@ -1609,16 +1939,16 @@ function setupEventListeners() {
         }
     });
     
-    flyBtn.addEventListener('click', () => {
-        toggleBirdMode();
+    playBtn.addEventListener('click', () => {
+        toggleGameMode();
     });
     
-    // Bird flight controls
-    setupBirdControls();
+    // Player ground controls
+    setupPlayerControls();
 }
 
-// Setup bird flight controls
-function setupBirdControls() {
+// Setup player ground controls
+function setupPlayerControls() {
     let isPointerLocked = false;
     
     // Keyboard controls
@@ -1626,34 +1956,29 @@ function setupBirdControls() {
         switch(event.code) {
             case 'KeyW':
             case 'ArrowUp':
-                birdControls.moveForward = true;
+                playerControls.moveForward = true;
                 break;
             case 'KeyS':
             case 'ArrowDown':
-                birdControls.moveBackward = true;
+                playerControls.moveBackward = true;
                 break;
             case 'KeyA':
             case 'ArrowLeft':
-                birdControls.moveLeft = true;
+                playerControls.moveLeft = true;
                 break;
             case 'KeyD':
             case 'ArrowRight':
-                birdControls.moveRight = true;
-                break;
-            case 'Space':
-                birdControls.moveUp = true;
-                event.preventDefault();
+                playerControls.moveRight = true;
                 break;
             case 'ShiftLeft':
             case 'ShiftRight':
-                birdControls.moveDown = true;
+                playerControls.boost = true;
                 break;
-            case 'KeyQ':
-                birdControls.boost = true;
-                break;
-            case 'KeyF':
-                // Toggle bird mode
-                toggleBirdMode();
+            case 'Escape':
+                // Exit game mode
+                if (playerControls.isPlaying) {
+                    toggleGameMode();
+                }
                 break;
         }
     });
@@ -1662,29 +1987,23 @@ function setupBirdControls() {
         switch(event.code) {
             case 'KeyW':
             case 'ArrowUp':
-                birdControls.moveForward = false;
+                playerControls.moveForward = false;
                 break;
             case 'KeyS':
             case 'ArrowDown':
-                birdControls.moveBackward = false;
+                playerControls.moveBackward = false;
                 break;
             case 'KeyA':
             case 'ArrowLeft':
-                birdControls.moveLeft = false;
+                playerControls.moveLeft = false;
                 break;
             case 'KeyD':
             case 'ArrowRight':
-                birdControls.moveRight = false;
-                break;
-            case 'Space':
-                birdControls.moveUp = false;
+                playerControls.moveRight = false;
                 break;
             case 'ShiftLeft':
             case 'ShiftRight':
-                birdControls.moveDown = false;
-                break;
-            case 'KeyQ':
-                birdControls.boost = false;
+                playerControls.boost = false;
                 break;
         }
     });
@@ -1737,56 +2056,51 @@ function setupBirdControls() {
 }
 
 // Toggle bird flight mode
-function toggleBirdMode() {
-    if (gameState.isGameOver) {
-        restartGame();
+function toggleGameMode() {
+    if (gameOver) {
+        location.reload();
         return;
     }
     
-    birdControls.isFlying = !birdControls.isFlying;
+    playerControls.isPlaying = !playerControls.isPlaying;
     
-    const flyBtn = document.getElementById('fly-btn');
-    const flightStatus = document.getElementById('flight-status');
+    const playBtn = document.getElementById('play-btn');
+    const gameStatus = document.getElementById('game-status');
     
-    if (birdControls.isFlying) {
-        // Enter bird mode - start the game!
-        birdControls.velocity.set(0, 0, 0);
-        birdControls.rotation.set(0, 0, 0);
+    if (playerControls.isPlaying) {
+        // Enter game mode - start the game!
+        playerControls.velocity.set(0, 0, 0);
+        playerControls.size = 1.0;
+        moneyCollected = 0;
+        gameOver = false;
         
-        // Initialize game state
-        gameState.isGameOver = false;
-        gameState.currentScore = stats.moneyCollected;
-        gameState.startTime = Date.now();
+        // Create player
+        createPlayer();
         
-        // Load high score
-        const savedHighScore = localStorage.getItem('stablecoinHuntHighScore');
-        if (savedHighScore) {
-            gameState.highScore = parseFloat(savedHighScore);
+        // Update UI
+        playBtn.textContent = '🛑 Stop';
+        playBtn.classList.add('active');
+        gameStatus.style.display = 'block';
+        updateStats();
+        
+        // Request pointer lock
+        renderer.domElement.requestPointerLock();
+        
+        console.log('GAME STARTED! Eat smaller animals (blue), avoid larger ones (red)!');
+    } else {
+        // Exit game mode
+        document.exitPointerLock();
+        
+        // Remove player from scene
+        if (playerControls.mesh) {
+            scene.remove(playerControls.mesh);
+            playerControls.mesh = null;
         }
         
         // Update UI
-        flyBtn.textContent = '🛬 Land';
-        flyBtn.classList.add('active');
-        flightStatus.style.display = 'block';
-        flightStatus.innerHTML = '<span style="color: #FFD700;">🦅 Flying - Eat animals, avoid plants!</span>';
-        
-        // Show instructions with warning
-        showBirdInstructions();
-        
-        // Make plants look dangerous
-        highlightDangerousPlants();
-        
-        console.log('GAME STARTED! Eat animals for money, but AVOID THE PLANTS - they are poisonous!');
-    } else {
-        // Exit bird mode
-        document.exitPointerLock();
-        hideBirdInstructions();
-        removeHighlightFromPlants();
-        
-        // Update UI
-        flyBtn.textContent = '🦅 Fly';
-        flyBtn.classList.remove('active');
-        flightStatus.style.display = 'none';
+        playBtn.textContent = '🎮 Play';
+        playBtn.classList.remove('active');
+        gameStatus.style.display = 'none';
         
         // Reset game state
         gameState.isGameOver = false;
