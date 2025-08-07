@@ -185,6 +185,44 @@ button:active {
     background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
 }
 
+#fly-btn {
+    background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+    font-size: 16px;
+}
+
+#fly-btn.active {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ff5252 100%);
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4);
+    }
+    50% {
+        box-shadow: 0 5px 30px rgba(255, 215, 0, 0.8);
+    }
+    100% {
+        box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4);
+    }
+}
+
+#flight-status {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 14px;
+    animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-5px);
+    }
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
     #container {

@@ -4,6 +4,22 @@ let particles = [];
 let isPaused = false;
 let ws = null;
 
+// Bird flight controls
+let birdControls = {
+    moveForward: false,
+    moveBackward: false,
+    moveLeft: false,
+    moveRight: false,
+    moveUp: false,
+    moveDown: false,
+    boost: false,
+    velocity: new THREE.Vector3(),
+    rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
+    mouseX: 0,
+    mouseY: 0,
+    isFlying: false
+};
+
 // Configuration
 const MAX_PLANTS = 10000; // Maximum number of plants in the garden
 const REMOVE_BATCH_SIZE = 100; // Number of oldest plants to remove when cap is reached
@@ -724,6 +740,11 @@ function updateStats() {
 function animate() {
     requestAnimationFrame(animate);
     
+    // Update bird flight controls
+    if (birdControls.isFlying) {
+        updateBirdFlight();
+    }
+    
     // Update plants (all plants are now persistent)
     particles.forEach(plant => {
         plant.update();
@@ -733,11 +754,14 @@ function animate() {
     if (!isPaused) {
         const time = Date.now() * 0.0001;
         
-        // Gentle camera movement around garden
-        camera.position.x = Math.cos(time) * 80;
-        camera.position.z = Math.sin(time) * 80;
-        camera.position.y = 20 + Math.sin(time * 2) * 5; // Slight vertical movement
-        camera.lookAt(0, -10, 0);
+        // Only do automatic camera movement if not in bird mode
+        if (!birdControls.isFlying) {
+            // Gentle camera movement around garden
+            camera.position.x = Math.cos(time) * 80;
+            camera.position.z = Math.sin(time) * 80;
+            camera.position.y = 20 + Math.sin(time * 2) * 5; // Slight vertical movement
+            camera.lookAt(0, -10, 0);
+        }
         
         // Animate flowers and bushes with gentle sway
         gardenElements.forEach((element, index) => {
@@ -750,6 +774,81 @@ function animate() {
     }
     
     renderer.render(scene, camera);
+}
+
+// Update bird flight physics
+function updateBirdFlight() {
+    const delta = 0.016; // Assume 60fps for now
+    
+    // Apply mouse look
+    birdControls.rotation.y -= birdControls.mouseX * 0.002;
+    birdControls.rotation.x -= birdControls.mouseY * 0.002;
+    birdControls.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, birdControls.rotation.x));
+    
+    // Reset mouse delta
+    birdControls.mouseX = 0;
+    birdControls.mouseY = 0;
+    
+    // Calculate movement direction based on camera rotation
+    const moveSpeed = birdControls.boost ? 150 : 50;
+    const direction = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    
+    // Get forward direction from camera
+    camera.getWorldDirection(direction);
+    right.crossVectors(direction, up).normalize();
+    
+    // Apply movement forces
+    const acceleration = new THREE.Vector3();
+    
+    if (birdControls.moveForward) {
+        acceleration.add(direction.multiplyScalar(moveSpeed));
+    }
+    if (birdControls.moveBackward) {
+        acceleration.sub(direction.multiplyScalar(moveSpeed));
+    }
+    if (birdControls.moveLeft) {
+        acceleration.sub(right.multiplyScalar(moveSpeed));
+    }
+    if (birdControls.moveRight) {
+        acceleration.add(right.multiplyScalar(moveSpeed));
+    }
+    if (birdControls.moveUp) {
+        acceleration.y += moveSpeed;
+    }
+    if (birdControls.moveDown) {
+        acceleration.y -= moveSpeed;
+    }
+    
+    // Apply acceleration to velocity
+    birdControls.velocity.add(acceleration.multiplyScalar(delta));
+    
+    // Apply drag (air resistance)
+    birdControls.velocity.multiplyScalar(0.9);
+    
+    // Apply gentle gravity when not actively flying up
+    if (!birdControls.moveUp) {
+        birdControls.velocity.y -= 9.8 * delta;
+    }
+    
+    // Update camera position
+    camera.position.add(birdControls.velocity.clone().multiplyScalar(delta));
+    
+    // Prevent going below ground
+    const minHeight = -25;
+    if (camera.position.y < minHeight) {
+        camera.position.y = minHeight;
+        birdControls.velocity.y = Math.max(0, birdControls.velocity.y);
+    }
+    
+    // Apply rotation to camera
+    camera.rotation.copy(birdControls.rotation);
+    
+    // Add wing flapping effect
+    const flapSpeed = birdControls.velocity.length() > 10 ? 0.2 : 0.1;
+    const flapAmount = Math.sin(Date.now() * 0.01) * flapSpeed;
+    camera.rotation.z = flapAmount * 0.1;
 }
 
 // WebSocket connection
@@ -873,6 +972,7 @@ function setupEventListeners() {
     const pauseBtn = document.getElementById('pause-btn');
     const clearBtn = document.getElementById('clear-btn');
     const connectBtn = document.getElementById('connect-btn');
+    const flyBtn = document.getElementById('fly-btn');
     
     pauseBtn.addEventListener('click', () => {
         isPaused = !isPaused;
@@ -890,6 +990,203 @@ function setupEventListeners() {
             connectBtn.textContent = 'Connect';
         }
     });
+    
+    flyBtn.addEventListener('click', () => {
+        toggleBirdMode();
+    });
+    
+    // Bird flight controls
+    setupBirdControls();
+}
+
+// Setup bird flight controls
+function setupBirdControls() {
+    let isPointerLocked = false;
+    
+    // Keyboard controls
+    document.addEventListener('keydown', (event) => {
+        switch(event.code) {
+            case 'KeyW':
+            case 'ArrowUp':
+                birdControls.moveForward = true;
+                break;
+            case 'KeyS':
+            case 'ArrowDown':
+                birdControls.moveBackward = true;
+                break;
+            case 'KeyA':
+            case 'ArrowLeft':
+                birdControls.moveLeft = true;
+                break;
+            case 'KeyD':
+            case 'ArrowRight':
+                birdControls.moveRight = true;
+                break;
+            case 'Space':
+                birdControls.moveUp = true;
+                event.preventDefault();
+                break;
+            case 'ShiftLeft':
+            case 'ShiftRight':
+                birdControls.moveDown = true;
+                break;
+            case 'KeyQ':
+                birdControls.boost = true;
+                break;
+            case 'KeyF':
+                // Toggle bird mode
+                toggleBirdMode();
+                break;
+        }
+    });
+    
+    document.addEventListener('keyup', (event) => {
+        switch(event.code) {
+            case 'KeyW':
+            case 'ArrowUp':
+                birdControls.moveForward = false;
+                break;
+            case 'KeyS':
+            case 'ArrowDown':
+                birdControls.moveBackward = false;
+                break;
+            case 'KeyA':
+            case 'ArrowLeft':
+                birdControls.moveLeft = false;
+                break;
+            case 'KeyD':
+            case 'ArrowRight':
+                birdControls.moveRight = false;
+                break;
+            case 'Space':
+                birdControls.moveUp = false;
+                break;
+            case 'ShiftLeft':
+            case 'ShiftRight':
+                birdControls.moveDown = false;
+                break;
+            case 'KeyQ':
+                birdControls.boost = false;
+                break;
+        }
+    });
+    
+    // Mouse controls for looking around
+    const canvas = renderer.domElement;
+    
+    canvas.addEventListener('click', () => {
+        if (birdControls.isFlying) {
+            canvas.requestPointerLock();
+        }
+    });
+    
+    document.addEventListener('pointerlockchange', () => {
+        isPointerLocked = document.pointerLockElement === canvas;
+    });
+    
+    document.addEventListener('mousemove', (event) => {
+        if (isPointerLocked && birdControls.isFlying) {
+            birdControls.mouseX = event.movementX;
+            birdControls.mouseY = event.movementY;
+        }
+    });
+    
+    // Touch controls for mobile
+    let touchStartX = 0;
+    let touchStartY = 0;
+    
+    canvas.addEventListener('touchstart', (event) => {
+        if (birdControls.isFlying) {
+            touchStartX = event.touches[0].clientX;
+            touchStartY = event.touches[0].clientY;
+        }
+    });
+    
+    canvas.addEventListener('touchmove', (event) => {
+        if (birdControls.isFlying) {
+            const touchX = event.touches[0].clientX;
+            const touchY = event.touches[0].clientY;
+            
+            birdControls.mouseX = (touchX - touchStartX) * 0.5;
+            birdControls.mouseY = (touchY - touchStartY) * 0.5;
+            
+            touchStartX = touchX;
+            touchStartY = touchY;
+            
+            event.preventDefault();
+        }
+    });
+}
+
+// Toggle bird flight mode
+function toggleBirdMode() {
+    birdControls.isFlying = !birdControls.isFlying;
+    
+    const flyBtn = document.getElementById('fly-btn');
+    const flightStatus = document.getElementById('flight-status');
+    
+    if (birdControls.isFlying) {
+        // Enter bird mode
+        birdControls.velocity.set(0, 0, 0);
+        birdControls.rotation.set(0, 0, 0);
+        
+        // Update UI
+        flyBtn.textContent = '🛬 Land';
+        flyBtn.classList.add('active');
+        flightStatus.style.display = 'block';
+        
+        // Show instructions
+        showBirdInstructions();
+        
+        console.log('Bird mode activated! Press F to exit');
+    } else {
+        // Exit bird mode
+        document.exitPointerLock();
+        hideBirdInstructions();
+        
+        // Update UI
+        flyBtn.textContent = '🦅 Fly';
+        flyBtn.classList.remove('active');
+        flightStatus.style.display = 'none';
+        
+        console.log('Bird mode deactivated');
+    }
+}
+
+// Show bird flight instructions
+function showBirdInstructions() {
+    const instructions = document.createElement('div');
+    instructions.id = 'bird-instructions';
+    instructions.innerHTML = `
+        <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                    background: rgba(0,0,0,0.8); color: white; padding: 20px; 
+                    border-radius: 10px; text-align: center; z-index: 1000;">
+            <h2>🦅 Bird Flight Mode</h2>
+            <p><strong>Click</strong> to capture mouse</p>
+            <p><strong>Mouse</strong> - Look around</p>
+            <p><strong>W/A/S/D</strong> - Fly forward/left/back/right</p>
+            <p><strong>Space</strong> - Fly up</p>
+            <p><strong>Shift</strong> - Fly down</p>
+            <p><strong>Q</strong> - Speed boost</p>
+            <p><strong>F</strong> - Exit bird mode</p>
+        </div>
+    `;
+    document.body.appendChild(instructions);
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        if (instructions.parentNode) {
+            instructions.style.opacity = '0.3';
+        }
+    }, 5000);
+}
+
+// Hide bird flight instructions
+function hideBirdInstructions() {
+    const instructions = document.getElementById('bird-instructions');
+    if (instructions) {
+        instructions.remove();
+    }
 }
 
 // Initialize everything when DOM is loaded
