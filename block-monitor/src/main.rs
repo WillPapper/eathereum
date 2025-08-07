@@ -9,6 +9,8 @@ use alloy::{
 };
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
+use redis::aio::MultiplexedConnection;
+use redis::{AsyncCommands, Client as RedisClient};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
@@ -17,7 +19,7 @@ use tokio::{
     time,
 };
 use tokio_tungstenite::{accept_async, tungstenite::Message};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 // Known stablecoin addresses on Base network (Chain ID: 8453)
 // Source: Base official token list and Base docs
@@ -58,6 +60,7 @@ struct StablecoinMonitor {
     stablecoins: HashMap<Address, StablecoinInfo>,
     last_block: Arc<RwLock<u64>>,
     tx_broadcaster: broadcast::Sender<TransactionData>,
+    redis_conn: Option<MultiplexedConnection>,
 }
 
 impl StablecoinMonitor {
@@ -96,11 +99,38 @@ impl StablecoinMonitor {
         // Get current block number
         let current_block = provider.get_block_number().await?;
 
+        // Connect to Redis if URL is provided
+        let redis_conn = if let Ok(redis_url) = env::var("REDIS_URL") {
+            match RedisClient::open(redis_url.as_str()) {
+                Ok(client) => match client.get_multiplexed_tokio_connection().await {
+                    Ok(conn) => {
+                        info!("Connected to Redis successfully");
+                        Some(conn)
+                    }
+                    Err(e) => {
+                        warn!("Failed to connect to Redis: {}. Running without Redis.", e);
+                        None
+                    }
+                },
+                Err(e) => {
+                    warn!(
+                        "Failed to create Redis client: {}. Running without Redis.",
+                        e
+                    );
+                    None
+                }
+            }
+        } else {
+            info!("REDIS_URL not set, running without Redis");
+            None
+        };
+
         Ok(Self {
             provider: Arc::new(provider),
             stablecoins,
             last_block: Arc::new(RwLock::new(current_block)),
             tx_broadcaster,
+            redis_conn,
         })
     }
 
@@ -201,7 +231,10 @@ impl StablecoinMonitor {
                             tx_data.stablecoin, tx_data.from, tx_data.to, tx_data.amount
                         );
 
-                        // Broadcast to WebSocket clients
+                        // Publish to Redis
+                        self.publish_to_redis(&tx_data).await;
+
+                        // Also broadcast to WebSocket clients (backwards compatibility)
                         let _ = self.tx_broadcaster.send(tx_data);
                     }
                 }
@@ -273,6 +306,37 @@ impl StablecoinMonitor {
             n => {
                 let fraction_str = format!("{:0width$}", fraction, width = n as usize);
                 format!("{}.{}", whole, fraction_str)
+            }
+        }
+    }
+
+    async fn publish_to_redis(&self, tx_data: &TransactionData) {
+        if let Some(mut conn) = self.redis_conn.clone() {
+            // Serialize transaction data
+            if let Ok(json_data) = serde_json::to_string(tx_data) {
+                // Publish to Redis channel for real-time updates
+                let channel = "stablecoin:transactions";
+                if let Err(e) = conn.publish::<_, _, ()>(channel, &json_data).await {
+                    error!("Failed to publish to Redis channel: {}", e);
+                }
+
+                // Also store in a Redis list for persistence (keep last 1000 transactions)
+                let list_key = "stablecoin:recent_transactions";
+                if let Err(e) = conn.lpush::<_, _, ()>(list_key, &json_data).await {
+                    error!("Failed to push to Redis list: {}", e);
+                } else {
+                    // Trim list to keep only recent transactions
+                    let _ = conn.ltrim::<_, ()>(list_key, 0, 999).await;
+                }
+
+                // Store transaction by hash for lookup
+                let hash_key = format!("stablecoin:tx:{}", tx_data.tx_hash);
+                if let Err(e) = conn
+                    .set_ex::<_, _, ()>(hash_key, &json_data, 3600) // Expire after 1 hour
+                    .await
+                {
+                    error!("Failed to store transaction in Redis: {}", e);
+                }
             }
         }
     }
