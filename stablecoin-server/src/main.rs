@@ -24,10 +24,12 @@ use tokio::{
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{error, info, warn};
 
-// Known stablecoin addresses on Base network
-const USDC_ADDRESS: Address = address!("833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
-const USDT_ADDRESS: Address = address!("fde4C96c8593536E31F229EA8f37b2ADa2699bb2");
-const DAI_ADDRESS: Address = address!("50c5725949A6F0c72E6C4a641F24049A917DB0Cb");
+// Known stablecoin addresses on Base network (Chain ID: 8453)
+// Source: Base official token list and Base docs
+// Verified on BaseScan: https://basescan.org/tokens
+const USDC_ADDRESS: Address = address!("833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"); // USDC on Base
+const USDT_ADDRESS: Address = address!("fde4C96c8593536E31F229EA8f37b2ADa2699bb2"); // USDT on Base  
+const DAI_ADDRESS: Address = address!("50c5725949A6F0c72E6C4a641F24049A917DB0Cb");  // DAI on Base
 
 // ERC20 Transfer event signature
 const TRANSFER_EVENT_SIGNATURE: &str = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -68,27 +70,28 @@ impl StablecoinMonitor {
             .on_http(rpc_url.parse()?)
             .boxed();
 
-        // Initialize stablecoin map
+        // Initialize stablecoin map with Base network stablecoins
+        // These addresses are specific to Base network (not Ethereum mainnet)
         let mut stablecoins = HashMap::new();
         stablecoins.insert(
             USDC_ADDRESS,
             StablecoinInfo {
                 name: "USDC",
-                decimals: 6,
+                decimals: 6, // USDC uses 6 decimals on Base
             },
         );
         stablecoins.insert(
             USDT_ADDRESS,
             StablecoinInfo {
-                name: "USDT",
-                decimals: 6,
+                name: "USDT", 
+                decimals: 6, // USDT uses 6 decimals on Base
             },
         );
         stablecoins.insert(
             DAI_ADDRESS,
             StablecoinInfo {
                 name: "DAI",
-                decimals: 18,
+                decimals: 18, // DAI uses 18 decimals on Base
             },
         );
 
@@ -324,16 +327,22 @@ async fn main() -> Result<()> {
         .init();
     
     // Get RPC URL from environment or use default
+    // MUST be a Base network RPC endpoint (not Ethereum mainnet)
     let rpc_url = env::var("ALCHEMY_RPC_URL")
         .unwrap_or_else(|_| "https://base-mainnet.g.alchemy.com/v2/YOUR_API_KEY".to_string());
     
     if rpc_url.contains("YOUR_API_KEY") {
         error!("Please set ALCHEMY_RPC_URL environment variable with your Alchemy API key");
+        error!("Get your Base network API key from: https://www.alchemy.com/");
         std::process::exit(1);
     }
     
-    info!("Starting Stablecoin Monitor Server");
+    info!("Starting Stablecoin Monitor Server for Base Network");
     info!("RPC URL: {}", rpc_url);
+    info!("Monitoring stablecoins:");
+    info!("  - USDC: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+    info!("  - USDT: 0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2");
+    info!("  - DAI:  0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb");
     
     // Create broadcast channel for transactions
     let (tx_broadcaster, _) = broadcast::channel::<TransactionData>(100);

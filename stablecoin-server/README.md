@@ -12,10 +12,14 @@ A Rust server that monitors Base network for stablecoin transactions (USDC, USDT
 
 ## Stablecoins Tracked
 
+**⚠️ IMPORTANT: These are Base Network addresses (Chain ID: 8453), NOT Ethereum mainnet!**
+
 On Base Network:
-- **USDC**: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
-- **USDT**: `0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2`
-- **DAI**: `0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb`
+- **USDC**: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` ([View on BaseScan](https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913))
+- **USDT**: `0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2` ([View on BaseScan](https://basescan.org/token/0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2))
+- **DAI**: `0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb` ([View on BaseScan](https://basescan.org/token/0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb))
+
+Source: [Base Official Documentation](https://docs.base.org/)
 
 ## Local Development
 
