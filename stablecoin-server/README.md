@@ -69,16 +69,19 @@ The server runs as a continuous background worker that polls every 2 seconds:
    - It polls the blockchain every 2 seconds
    - WebSocket server runs on port 8080 for client connections
 
-### Alternative: Using render.yaml
+### Alternative: Using render.yaml (Recommended)
 
-Deploy directly using the provided configuration:
+Deploy directly using the provided configuration with auto-deploy enabled:
 
 ```bash
 # Push render.yaml to your repo, then in Render:
 # 1. New → Blueprint
 # 2. Connect your repo
 # 3. Render will auto-detect render.yaml
+# 4. Auto-deploy is enabled - future pushes to main will deploy automatically
 ```
+
+**Note**: Auto-deploy is enabled by default in `render.yaml`. Every push to your main branch will trigger a new deployment automatically.
 
 ### Monitoring
 

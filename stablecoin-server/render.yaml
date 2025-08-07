@@ -14,7 +14,7 @@ services:
         value: 8081
       - key: RUST_LOG
         value: info
-    autoDeploy: false  # Set to true if you want auto-deploy from GitHub
+    autoDeploy: true  # Auto-deploy enabled - will deploy on every push to main branch
     
   # Optional: Separate web service for WebSocket connections
   # Uncomment if you want to split WebSocket server from monitor
