@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stablecoin Transaction Visualizer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="container">
+        <div id="canvas-container"></div>
+        <div id="info-panel">
+            <h1>Stablecoin Transactions</h1>
+            <div id="stats">
+                <div class="stat-item">
+                    <span class="stat-label">Total Transactions:</span>
+                    <span id="total-transactions" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">USDC:</span>
+                    <span id="usdc-count" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">USDT:</span>
+                    <span id="usdt-count" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">DAI:</span>
+                    <span id="dai-count" class="stat-value">0</span>
+                </div>
+            </div>
+            <div id="connection-status">
+                <span class="status-label">Status:</span>
+                <span id="status" class="disconnected">Disconnected</span>
+            </div>
+            <div id="controls">
+                <button id="pause-btn">Pause</button>
+                <button id="clear-btn">Clear</button>
+                <button id="connect-btn">Connect</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="visualizer.js"></script>
+</body>
+</html>
