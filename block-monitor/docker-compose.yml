@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  block-monitor:
+    build: .
+    ports:
+      - "8080:8080"  # WebSocket port
+      - "8081:8081"  # Health check port
+    environment:
+      - RPC_URL=${RPC_URL}
+      - PORT=8080
+      - HEALTH_PORT=8081
+      - RUST_LOG=info
+    restart: unless-stopped
+    # The service runs continuously as a background worker
+    # It polls the blockchain every 2 seconds

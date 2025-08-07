@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# Pre-commit hook to run cargo fmt on block-monitor project
+
+echo "Running cargo fmt on block-monitor..."
+
+# Check if we're modifying any Rust files in block-monitor
+if git diff --cached --name-only | grep -q "^block-monitor/.*\.rs$"; then
+    # Change to block-monitor directory
+    cd block-monitor
+    
+    # Run cargo fmt
+    cargo fmt
+    
+    # Check if cargo fmt made any changes
+    if ! git diff --exit-code --quiet; then
+        echo "cargo fmt made changes. Please review and stage them."
+        echo "Run 'git add -u' to stage the formatted files."
+        exit 1
+    fi
+    
+    echo "✓ Rust code is properly formatted"
+    cd ..
+fi
+
+exit 0
