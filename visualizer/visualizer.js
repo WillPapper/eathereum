@@ -51,7 +51,7 @@ let leverageFruits = []; // Special fruits that double player size
 let lastLeverageFruitTime = 0;
 let lastLeverageFruitEaten = 0; // Track when last leverage fruit was eaten
 let leverageEaten = 0; // Count of leverage fruits eaten in double-eat window
-let originalPlayerSize = 1.0; // Store original player size for resetting
+let naturalPlayerSize = 1.0; // Track player's natural size without leverage effects
 let currentLeverageMultiplier = 1.0; // Current leverage multiplier (1.0 = no effect)
 let leverageActive = false; // Whether leverage effect is active
 let leverageEffectTimer = null; // Timer to reset player size
@@ -74,6 +74,12 @@ const MAX_SPEEDRUN_FRUITS = 2; // Maximum speedrun fruits at any time
 const SPEEDRUN_FRUIT_LIFETIME = 40000; // 40 seconds in milliseconds
 const SPEEDRUN_DOUBLE_EAT_WINDOW = 5000; // 5 seconds to double eat for 4x effect
 const SPEEDRUN_EFFECT_DURATION = 12000; // 12 seconds of speed effect
+
+// Difficulty scaling system
+let difficultyLevel = 'normal'; // 'normal' or 'survival'
+let lastDifficultyCheck = 0;
+const DIFFICULTY_CHECK_INTERVAL = 5000; // Check every 5 seconds
+const EDIBLE_THRESHOLD = 0.5; // 50% of animals must be edible to trigger survival mode
 
 // Configuration
 const MAX_PLANTS = 10000; // Maximum number of plants in the garden
@@ -525,6 +531,13 @@ class TransactionAnimal {
         this.jumpCooldown = 0;
         this.fleeRadius = 5; // Much smaller distance at which animal reacts to player
         
+        // AI State properties for survival mode
+        this.aiState = 'roaming'; // 'roaming', 'hunting', 'eating', 'growing'
+        this.targetAnimal = null; // Target animal for hunting
+        this.huntingCooldown = 0; // Cooldown between hunts
+        this.originalSize = this.size; // Store original size for growth tracking
+        this.growthFromEating = 0; // How much size gained from eating other animals
+        
         // Get animal color based on stablecoin
         this.baseColor = STABLECOIN_COLORS[stablecoin] || 0xFFFFFF;
         
@@ -863,8 +876,166 @@ class TransactionAnimal {
             this.aura.material.opacity = 0.2 + Math.sin(Date.now() * 0.003) * 0.1;
         }
         
+        // Update AI behavior based on difficulty level
+        this.updateAIBehavior();
+        
         this.age++;
         return this.isAlive;
+    }
+    
+    // New AI behavior system for survival mode
+    updateAIBehavior() {
+        // Default behavior - react to player if close
+        if (playerControls.mesh) {
+            this.handlePlayerInteraction();
+        }
+        
+        // Survival mode: animals hunt each other
+        if (difficultyLevel === 'survival') {
+            this.handleSurvivalMode();
+        }
+    }
+    
+    // Handle player interaction (flee/chase)
+    handlePlayerInteraction() {
+        const distanceToPlayer = playerControls.mesh.position.distanceTo(this.mesh.position);
+        
+        // Only react to player if VERY close AND only sometimes
+        if (playerControls.isPlaying && distanceToPlayer < this.fleeRadius && Math.random() < 0.3) {
+            if (this.size < playerControls.size * 0.7) {
+                // Only much smaller animals flee, and only sometimes
+                const fleeDirection = new THREE.Vector3();
+                fleeDirection.subVectors(this.mesh.position, playerControls.mesh.position);
+                fleeDirection.y = 0;
+                fleeDirection.normalize();
+                
+                // Blend flee direction with current direction (don't change abruptly)
+                const fleeAngle = Math.atan2(fleeDirection.x, fleeDirection.z);
+                const directionDiff = fleeAngle - this.targetDirection;
+                let normalizedDiff = this.normalizeAngle(directionDiff);
+                
+                this.targetDirection += normalizedDiff * 0.2; // Gradual steering away
+                this.speed = Math.min(this.speed * 1.3, 2); // Slightly faster but not panic
+                
+            } else if (this.size > playerControls.size * 1.5) {
+                // Only much larger animals chase, and only rarely
+                if (Math.random() < 0.1) { // 10% chance to chase
+                    const chaseDirection = new THREE.Vector3();
+                    chaseDirection.subVectors(playerControls.mesh.position, this.mesh.position);
+                    chaseDirection.y = 0;
+                    chaseDirection.normalize();
+                    
+                    // Blend chase direction with current direction
+                    const chaseAngle = Math.atan2(chaseDirection.x, chaseDirection.z);
+                    const directionDiff = chaseAngle - this.targetDirection;
+                    let normalizedDiff = this.normalizeAngle(directionDiff);
+                    
+                    this.targetDirection += normalizedDiff * 0.15; // Even more gradual steering toward
+                    this.speed = Math.min(this.speed * 1.1, 1.5); // Less aggressive chasing
+                }
+            }
+        }
+    }
+    
+    // Handle survival mode behavior (animal vs animal)
+    handleSurvivalMode() {
+        switch (this.aiState) {
+            case 'roaming':
+                // Look for smaller animals to hunt
+                if (this.huntingCooldown <= 0 && Math.random() < 0.02) { // 2% chance per frame to start hunting
+                    this.findTargetToHunt();
+                }
+                break;
+                
+            case 'hunting':
+                if (this.targetAnimal && this.targetAnimal.isAlive) {
+                    this.huntTarget();
+                } else {
+                    // Target lost, return to roaming
+                    this.aiState = 'roaming';
+                    this.targetAnimal = null;
+                }
+                break;
+                
+            case 'eating':
+                // Brief state, will be handled by animalEatAnimal function
+                break;
+                
+            case 'growing':
+                // Brief pause state after eating, timeout handled by animalEatAnimal function
+                break;
+        }
+    }
+    
+    // Find a smaller animal to hunt
+    findTargetToHunt() {
+        const huntingRange = 25; // Range to look for prey
+        let bestTarget = null;
+        let bestDistance = huntingRange;
+        
+        animals.forEach(otherAnimal => {
+            if (otherAnimal === this || !otherAnimal.isAlive) return;
+            
+            // Can only hunt significantly smaller animals
+            if (otherAnimal.size < this.size * 0.8) {
+                const distance = this.mesh.position.distanceTo(otherAnimal.mesh.position);
+                if (distance < bestDistance) {
+                    bestTarget = otherAnimal;
+                    bestDistance = distance;
+                }
+            }
+        });
+        
+        if (bestTarget) {
+            this.targetAnimal = bestTarget;
+            this.aiState = 'hunting';
+            this.speed *= 1.5; // Speed boost while hunting
+        }
+    }
+    
+    // Hunt the target animal
+    huntTarget() {
+        if (!this.targetAnimal || !this.targetAnimal.isAlive) {
+            this.aiState = 'roaming';
+            this.targetAnimal = null;
+            return;
+        }
+        
+        const distance = this.mesh.position.distanceTo(this.targetAnimal.mesh.position);
+        const catchRange = this.size + this.targetAnimal.size + 0.5;
+        
+        if (distance < catchRange) {
+            // Caught the prey!
+            this.aiState = 'eating';
+            animalEatAnimal(this, this.targetAnimal);
+        } else {
+            // Chase the target
+            const chaseDirection = new THREE.Vector3();
+            chaseDirection.subVectors(this.targetAnimal.mesh.position, this.mesh.position);
+            chaseDirection.y = 0;
+            chaseDirection.normalize();
+            
+            const chaseAngle = Math.atan2(chaseDirection.x, chaseDirection.z);
+            const directionDiff = chaseAngle - this.targetDirection;
+            let normalizedDiff = this.normalizeAngle(directionDiff);
+            
+            this.targetDirection += normalizedDiff * 0.3; // More aggressive turning while hunting
+            
+            // Give up if too far away
+            if (distance > 35) {
+                this.aiState = 'roaming';
+                this.targetAnimal = null;
+                this.huntingCooldown = 5000; // 5 second cooldown before hunting again
+                this.speed /= 1.5; // Return to normal speed
+            }
+        }
+    }
+    
+    // Helper function to normalize angle differences
+    normalizeAngle(angle) {
+        while (angle > Math.PI) angle -= Math.PI * 2;
+        while (angle < -Math.PI) angle += Math.PI * 2;
+        return angle;
     }
     
     // Update threat indicator with floating icons above animals
@@ -1400,9 +1571,16 @@ function eatAnimal(animal, index) {
     // Add to money collected
     moneyCollected += animal.amount;
     
-    // Grow player size
+    // Grow natural player size (not affected by leverage)
     const growthFactor = Math.log10(animal.amount + 1) * 0.1;
-    playerControls.size = Math.min(playerControls.size + growthFactor, 10); // Max size of 10
+    const oldNaturalSize = naturalPlayerSize;
+    naturalPlayerSize = Math.min(naturalPlayerSize + growthFactor, 10); // Max natural size of 10
+    
+    // Update displayed size with leverage multiplier applied
+    const oldDisplaySize = playerControls.size;
+    playerControls.size = naturalPlayerSize * currentLeverageMultiplier;
+    
+    console.log(`Animal eaten: $${animal.amount.toFixed(2)} → Growth: +${growthFactor.toFixed(3)} (Natural: ${oldNaturalSize.toFixed(3)} → ${naturalPlayerSize.toFixed(3)}, Display: ${oldDisplaySize.toFixed(3)} → ${playerControls.size.toFixed(3)})`);
     
     // Update player mesh scale
     playerControls.mesh.scale.setScalar(playerControls.size);
@@ -1462,15 +1640,9 @@ function collectLeverageFruit(fruit, index) {
         console.log('Leverage fruit collected! 2x size boost activated!');
     }
     
-    // If leverage is already active, remove the current multiplier first
-    if (leverageActive) {
-        // Remove the current leverage effect to get back to natural size
-        playerControls.size = playerControls.size / currentLeverageMultiplier;
-    }
-    
-    // Apply the new size multiplier to the current natural size
+    // Apply the new leverage multiplier to natural size
     currentLeverageMultiplier = sizeMultiplier;
-    playerControls.size = playerControls.size * currentLeverageMultiplier;
+    playerControls.size = naturalPlayerSize * currentLeverageMultiplier;
     
     // Update player mesh size
     if (playerControls.mesh) {
@@ -1513,8 +1685,9 @@ function collectLeverageFruit(fruit, index) {
 // Reset leverage effect back to normal size
 function resetLeverageEffect() {
     if (leverageActive) {
-        // Remove the leverage multiplier to get back to natural size
-        playerControls.size = playerControls.size / currentLeverageMultiplier;
+        // Reset to natural size (no multiplier)
+        currentLeverageMultiplier = 1.0;
+        playerControls.size = naturalPlayerSize;
         
         // Update player mesh size
         if (playerControls.mesh) {
@@ -1525,12 +1698,11 @@ function resetLeverageEffect() {
         leverageActive = false;
         leverageEaten = 0;
         leverageEffectTimer = null;
-        currentLeverageMultiplier = 1.0; // Reset multiplier
         
         // Update all animal threat indicators since player size changed
         updateAnimalIndicators();
         
-        console.log(`Leverage effect expired. Player size reset to ${playerControls.size.toFixed(1)}`);
+        console.log(`Leverage effect expired. Player size reset to natural size: ${playerControls.size.toFixed(1)}`);
     }
 }
 
@@ -2938,6 +3110,133 @@ function resetSpeedrunEffect() {
     }
 }
 
+// Check if difficulty should scale up based on animal threat levels
+function checkDifficultyScaling() {
+    const currentTime = Date.now();
+    
+    // Only check every few seconds to avoid performance impact
+    if (currentTime - lastDifficultyCheck < DIFFICULTY_CHECK_INTERVAL) {
+        return;
+    }
+    lastDifficultyCheck = currentTime;
+    
+    // Skip if not enough animals to make a meaningful calculation
+    if (animals.length < 5) {
+        return;
+    }
+    
+    // Calculate how many animals are edible vs threatening
+    let edibleCount = 0;
+    let threateningCount = 0;
+    
+    animals.forEach(animal => {
+        if (animal.size < playerControls.size * 1.2) {
+            edibleCount++;
+        } else {
+            threateningCount++;
+        }
+    });
+    
+    const edibleRatio = edibleCount / animals.length;
+    
+    // Switch to survival mode if >50% are edible
+    if (edibleRatio > EDIBLE_THRESHOLD && difficultyLevel === 'normal') {
+        difficultyLevel = 'survival';
+        console.log(`🔥 SURVIVAL MODE ACTIVATED! ${(edibleRatio * 100).toFixed(1)}% of animals are now edible. Animals will start eating each other to grow!`);
+        
+        // Initialize hunting behavior for some animals
+        animals.forEach(animal => {
+            if (Math.random() < 0.3) { // 30% chance to become hunters initially
+                animal.aiState = 'hunting';
+                animal.huntingCooldown = Math.random() * 2000; // Random start delay
+            }
+        });
+    }
+    // Switch back to normal if threats return (though this is less likely)
+    else if (edibleRatio < EDIBLE_THRESHOLD * 0.7 && difficultyLevel === 'survival') {
+        difficultyLevel = 'normal';
+        console.log(`✅ Difficulty normalized. ${(edibleRatio * 100).toFixed(1)}% animals edible.`);
+        
+        // Reset all animals to roaming state
+        animals.forEach(animal => {
+            animal.aiState = 'roaming';
+            animal.targetAnimal = null;
+            animal.huntingCooldown = 0;
+        });
+    }
+}
+
+// Handle animal eating another animal (survival mode behavior)
+function animalEatAnimal(predator, prey) {
+    // Calculate growth from eating
+    const growthFactor = Math.log10(prey.amount + 1) * 0.15; // Slightly more growth than player eating
+    predator.size = Math.min(predator.size + growthFactor, 8); // Max animal size of 8
+    predator.growthFromEating += growthFactor;
+    
+    // Update predator's mesh scale
+    predator.mesh.scale.setScalar(predator.size / predator.originalSize);
+    
+    // Update predator's value proportionally to size increase
+    predator.amount = Math.min(predator.amount * 1.2, 50000); // Cap at 50k value
+    
+    // Visual feedback
+    flashAnimalEatingEffect(predator.mesh.position, prey.baseColor);
+    
+    // Remove prey from the world
+    scene.remove(prey.mesh);
+    prey.dispose();
+    const preyIndex = animals.indexOf(prey);
+    if (preyIndex !== -1) {
+        animals.splice(preyIndex, 1);
+        stats.currentAnimals--;
+    }
+    
+    // Set predator to growing state briefly
+    predator.aiState = 'growing';
+    predator.targetAnimal = null;
+    
+    // Return to hunting after a brief pause
+    setTimeout(() => {
+        if (predator.isAlive && difficultyLevel === 'survival') {
+            predator.aiState = 'hunting';
+            predator.huntingCooldown = 3000 + Math.random() * 2000; // 3-5 second cooldown
+        }
+    }, 1000);
+    
+    console.log(`🍖 ${predator.animalType} ate ${prey.animalType}! Size: ${predator.originalSize.toFixed(1)} → ${predator.size.toFixed(1)} (+${growthFactor.toFixed(2)})`);
+}
+
+// Visual effect for animal eating animal
+function flashAnimalEatingEffect(position, color) {
+    // Create a brief flash effect at the eating position
+    const flashGeometry = new THREE.SphereGeometry(2, 6, 4);
+    const flashMaterial = new THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.8
+    });
+    const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+    flash.position.copy(position);
+    scene.add(flash);
+    
+    // Animate and remove the flash
+    let scale = 0.1;
+    const animate = () => {
+        scale += 0.3;
+        flash.scale.setScalar(scale);
+        flashMaterial.opacity = Math.max(0, 1 - scale / 3);
+        
+        if (scale < 3) {
+            requestAnimationFrame(animate);
+        } else {
+            scene.remove(flash);
+            flash.geometry.dispose();
+            flash.material.dispose();
+        }
+    };
+    animate();
+}
+
 // Show speedrun collection visual effect
 function showSpeedrunCollectionEffect(position, multiplier) {
     const effectGroup = new THREE.Group();
@@ -3432,6 +3731,35 @@ function updateStats() {
         }
     }
     
+    // Update player size indicator
+    const sizeEl = document.getElementById('player-size');
+    if (sizeEl && playerControls) {
+        let sizeText = '';
+        let sizeColor = '#FFFFFF';
+        
+        if (leverageActive && currentLeverageMultiplier > 1) {
+            sizeText = `${playerControls.size.toFixed(2)} (${naturalPlayerSize.toFixed(2)}×${currentLeverageMultiplier.toFixed(1)})`;
+            sizeColor = '#FFD700'; // Gold when leveraged
+        } else if (speedrunActive) {
+            sizeText = playerControls.size.toFixed(2);
+            sizeColor = '#00FFFF'; // Cyan when speed boosted
+        } else {
+            sizeText = playerControls.size.toFixed(2);
+            sizeColor = '#FFFFFF'; // White normally
+        }
+        
+        // Add difficulty indicator
+        if (difficultyLevel === 'survival') {
+            sizeText += ' 🔥'; // Fire emoji for survival mode
+            if (sizeColor === '#FFFFFF') {
+                sizeColor = '#FF6B6B'; // Red tint for survival mode
+            }
+        }
+        
+        sizeEl.textContent = sizeText;
+        sizeEl.style.color = sizeColor;
+    }
+    
     // Update the page title to show adoption progress
     document.title = `Stablecoin Garden - ${borderTrees.length} Trees, ${totalFruits} Fruits`;
     
@@ -3518,6 +3846,11 @@ function animate(currentTime) {
         }
         return true;
     });
+    
+    // Check and update difficulty scaling
+    if (playerControls.isPlaying) {
+        checkDifficultyScaling();
+    }
     
     // Animate garden elements
     if (!isPaused) {
@@ -4051,6 +4384,7 @@ function toggleGameMode() {
         // Enter game mode - start the game!
         playerControls.velocity.set(0, 0, 0);
         playerControls.size = 1.0;
+        naturalPlayerSize = 1.0;
         moneyCollected = 0;
         gameOver = false;
         
