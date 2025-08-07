@@ -1,0 +1,13 @@
+{
+  "name": "redis-stream-mock",
+  "version": "1.0.0",
+  "description": "Mock data publisher for testing Redis stream consumer",
+  "main": "mock-redis-publisher.js",
+  "scripts": {
+    "mock": "node mock-redis-publisher.js",
+    "test-client": "open test-client.html"
+  },
+  "dependencies": {
+    "redis": "^4.6.0"
+  }
+}
