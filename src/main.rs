@@ -19,19 +19,19 @@ use reth_tracing::tracing::{error, info};
 use std::{collections::HashMap, ops::RangeInclusive};
 use once_cell::sync::Lazy;
 
-/// Known stablecoin addresses on Ethereum mainnet
+/// Known stablecoin addresses (checksummed)
 static STABLECOIN_ADDRESSES: Lazy<HashMap<Address, StablecoinInfo>> = Lazy::new(|| {
     HashMap::from([
         (
-            address!("dac17f958d2ee523a2206206994597c13d831ec7"),
-            StablecoinInfo { name: "USDT", decimals: 6 },
-        ),
-        (
-            address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+            address!("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"),
             StablecoinInfo { name: "USDC", decimals: 6 },
         ),
         (
-            address!("6b175474e89094c44da98b954eedeac495271d0f"),
+            address!("0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2"),
+            StablecoinInfo { name: "USDT", decimals: 6 },
+        ),
+        (
+            address!("0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb"),
             StablecoinInfo { name: "DAI", decimals: 18 },
         ),
     ])
@@ -111,23 +111,30 @@ fn format_token_amount(amount: U256, decimals: u8) -> String {
 }
 
 /// Extract transaction data from any transaction envelope variant
-fn extract_tx_data(envelope: &EthereumTxEnvelope) -> (Option<Address>, U256, &Bytes) {
+fn extract_tx_data<T>(envelope: &EthereumTxEnvelope<T>) -> (Option<Address>, U256, Bytes) 
+where
+    T: Transaction,
+{
     use EthereumTxEnvelope::*;
     
     match envelope {
-        Legacy(tx) | Eip2930(tx) => {
+        Legacy(tx) => {
             let inner = tx.tx();
-            (inner.to(), inner.value(), inner.input())
+            (inner.to(), inner.value(), inner.input().clone())
+        }
+        Eip2930(tx) => {
+            let inner = tx.tx();
+            (inner.to(), inner.value(), inner.input().clone())
         }
         Eip1559(tx) => {
             let inner = tx.tx();
-            (inner.to(), inner.value(), inner.input())
+            (inner.to(), inner.value(), inner.input().clone())
         }
         Eip4844(tx) => {
             let inner = tx.tx();
-            (inner.to(), inner.value(), inner.input())
+            (inner.to(), inner.value(), inner.input().clone())
         }
-        _ => (None, U256::ZERO, &Bytes::new()),
+        _ => (None, U256::ZERO, Bytes::new()),
     }
 }
 
@@ -359,11 +366,11 @@ where
                 // Process potential stablecoin transaction
                 if let Some(to_addr) = to {
                     self.process_stablecoin_transaction(
-                        block_number,
-                        tx_hash,
+                        *block_number,
+                        *tx_hash,
                         to_addr,
                         sender,
-                        input,
+                        &input,
                     );
                 }
             }
