@@ -1,6 +1,6 @@
 use alloy_consensus::{EthereumTxEnvelope, Transaction};
 use alloy_eips::eip2718::Typed2718;
-use alloy_primitives::{BlockNumber, U256, Bytes};
+use alloy_primitives::{Address, BlockNumber, U256, Bytes};
 use clap::{Args, Parser};
 use eyre::OptionExt;
 use futures::{FutureExt, StreamExt};
@@ -26,6 +26,38 @@ struct StablecoinVisualizerExEx<Node: FullNodeComponents> {
     backfill_job_factory: BackfillJobFactory<Node::Evm, Node::Provider>,
 }
 
+/// ERC-20 Transfer event data
+#[derive(Debug)]
+struct Erc20Transfer {
+    from: Address,
+    to: Address,
+    amount: U256,
+    token: Address,
+}
+
+/// Format token amount with proper decimals
+fn format_token_amount(amount: U256, token_name: &str) -> String {
+    // Most stablecoins use different decimals
+    let decimals = match token_name {
+        "USDT" => 6,  // Tether uses 6 decimals
+        "USDC" => 6,  // USD Coin uses 6 decimals
+        "DAI" => 18,  // DAI uses 18 decimals
+        _ => 18,
+    };
+    
+    // Convert to decimal representation
+    let divisor = U256::from(10).pow(U256::from(decimals));
+    let whole = amount / divisor;
+    let fraction = amount % divisor;
+    
+    // Format with decimals
+    if decimals == 6 {
+        format!("{}.{:06}", whole, fraction)
+    } else {
+        format!("{}.{:018}", whole, fraction)
+    }
+}
+
 impl<Node> StablecoinVisualizerExEx<Node>
 where
     Node: FullNodeComponents<Types: NodeTypes<Primitives = EthPrimitives>>,
@@ -37,6 +69,79 @@ where
         Self {
             ctx,
             backfill_job_factory,
+        }
+    }
+    
+    /// Parse ERC-20 transfer function call from input data
+    /// transfer(address,uint256) - 0xa9059cbb
+    fn parse_erc20_transfer(input: &Bytes, from: Address, token: Address) -> Option<Erc20Transfer> {
+        // ERC-20 transfer function selector
+        const TRANSFER_SELECTOR: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
+        
+        // Check if input is long enough and starts with transfer selector
+        if input.len() >= 68 && input[0..4] == TRANSFER_SELECTOR {
+            // Extract recipient address (bytes 4-36, padded to 32 bytes)
+            let to_bytes = &input[16..36]; // Skip padding, get 20 bytes of address
+            let to = Address::from_slice(to_bytes);
+            
+            // Extract amount (bytes 36-68)
+            let amount_bytes = &input[36..68];
+            let amount = U256::from_be_slice(amount_bytes);
+            
+            return Some(Erc20Transfer {
+                from,
+                to,
+                amount,
+                token,
+            });
+        }
+        None
+    }
+    
+    /// Parse ERC-20 transferFrom function call from input data
+    /// transferFrom(address,address,uint256) - 0x23b872dd
+    fn parse_erc20_transfer_from(input: &Bytes, token: Address) -> Option<Erc20Transfer> {
+        // ERC-20 transferFrom function selector
+        const TRANSFER_FROM_SELECTOR: [u8; 4] = [0x23, 0xb8, 0x72, 0xdd];
+        
+        // Check if input is long enough and starts with transferFrom selector
+        if input.len() >= 100 && input[0..4] == TRANSFER_FROM_SELECTOR {
+            // Extract from address (bytes 4-36, padded to 32 bytes)
+            let from_bytes = &input[16..36]; // Skip padding, get 20 bytes of address
+            let from = Address::from_slice(from_bytes);
+            
+            // Extract to address (bytes 36-68, padded to 32 bytes)
+            let to_bytes = &input[48..68]; // Skip padding, get 20 bytes of address
+            let to = Address::from_slice(to_bytes);
+            
+            // Extract amount (bytes 68-100)
+            let amount_bytes = &input[68..100];
+            let amount = U256::from_be_slice(amount_bytes);
+            
+            return Some(Erc20Transfer {
+                from,
+                to,
+                amount,
+                token,
+            });
+        }
+        None
+    }
+    
+    /// Check if an address is a known stablecoin
+    fn is_stablecoin(address: &Address) -> Option<&'static str> {
+        // Convert address to lowercase hex string for comparison
+        let addr_hex = format!("{:?}", address).to_lowercase();
+        
+        // Known stablecoin addresses on Ethereum mainnet
+        if addr_hex.contains("dac17f958d2ee523a2206206994597c13d831ec7") {
+            Some("USDT")
+        } else if addr_hex.contains("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48") {
+            Some("USDC")
+        } else if addr_hex.contains("6b175474e89094c44da98b954eedeac495271d0f") {
+            Some("DAI")
+        } else {
+            None
         }
     }
 
@@ -164,20 +269,35 @@ where
                 // - 0x70a08231: balanceOf(address)
                 // - 0x18160ddd: totalSupply()
                 
-                // Check if this is a potential stablecoin transaction
-                // Known stablecoin addresses:
-                // - USDT: 0xdac17f958d2ee523a2206206994597c13d831ec7
-                // - USDC: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
-                // - DAI: 0x6b175474e89094c44da98b954eedeac495271d0f
-                
+                // Check if this is a stablecoin transaction and parse transfer data
                 if let Some(to_addr) = to {
-                    let to_addr_lower = format!("{:?}", to_addr).to_lowercase();
-                    if to_addr_lower.contains("dac17f958d2ee523a2206206994597c13d831ec7") {
-                        info!("Found USDT transaction!");
-                    } else if to_addr_lower.contains("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48") {
-                        info!("Found USDC transaction!");
-                    } else if to_addr_lower.contains("6b175474e89094c44da98b954eedeac495271d0f") {
-                        info!("Found DAI transaction!");
+                    if let Some(stablecoin_name) = Self::is_stablecoin(&to_addr) {
+                        // Try to parse as ERC-20 transfer
+                        if let Some(transfer) = Self::parse_erc20_transfer(input, sender, to_addr) {
+                            info!(
+                                block = %block_number,
+                                tx_hash = ?tx_hash,
+                                stablecoin = %stablecoin_name,
+                                from = ?transfer.from,
+                                to = ?transfer.to,
+                                amount = ?transfer.amount,
+                                amount_decimal = ?format_token_amount(transfer.amount, stablecoin_name),
+                                "Found {} transfer", stablecoin_name
+                            );
+                        }
+                        // Try to parse as ERC-20 transferFrom
+                        else if let Some(transfer) = Self::parse_erc20_transfer_from(input, to_addr) {
+                            info!(
+                                block = %block_number,
+                                tx_hash = ?tx_hash,
+                                stablecoin = %stablecoin_name,
+                                from = ?transfer.from,
+                                to = ?transfer.to,
+                                amount = ?transfer.amount,
+                                amount_decimal = ?format_token_amount(transfer.amount, stablecoin_name),
+                                "Found {} transferFrom", stablecoin_name
+                            );
+                        }
                     }
                 }
                 
