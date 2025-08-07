@@ -1,7 +1,7 @@
 # Stablecoin Ecosystem Game Consumer
 
 ## Overview
-The Game Consumer is an interactive 3D visualization game that connects to the Redis Stream Consumer WebSocket service and transforms real-time blockchain transactions into gameplay elements. Players control an animal in a dynamic ecosystem where other animals represent stablecoin transactions on the Base network.
+The Game Consumer is an interactive 3D visualization game that connects to the Game Server WebSocket service and transforms real-time blockchain transactions into gameplay elements. Players control an animal in a dynamic ecosystem where other animals represent stablecoin transactions on the Base network.
 
 ## Features
 

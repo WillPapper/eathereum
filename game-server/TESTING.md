@@ -1,4 +1,4 @@
-# Testing Guide: Redis Stream Consumer WebSocket Service
+# Testing Guide: Game Server WebSocket Service
 
 ## Client Connection Workflow
 
@@ -43,7 +43,7 @@ redis-server
 
 ### Step 2: Start the WebSocket Service
 ```bash
-cd redis-stream-consumer
+cd game-server
 cargo run
 ```
 
@@ -58,7 +58,7 @@ INFO redis_stream_consumer: WebSocket server starting on port 8080
 ### Step 3: Start Mock Data Publisher
 ```bash
 # In a new terminal
-cd redis-stream-consumer
+cd game-server
 npm install
 npm run mock
 ```
