@@ -20,6 +20,15 @@ let birdControls = {
     isFlying: false
 };
 
+// Game state
+let gameState = {
+    isGameOver: false,
+    highScore: 0,
+    currentScore: 0,
+    startTime: null,
+    endTime: null
+};
+
 // Configuration
 const MAX_PLANTS = 10000; // Maximum number of plants in the garden
 const REMOVE_BATCH_SIZE = 100; // Number of oldest plants to remove when cap is reached
@@ -1152,11 +1161,26 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-// Check for bird-animal collisions
+// Check for bird collisions with animals and plants
 function checkBirdCollisions() {
+    if (gameState.isGameOver) return;
+    
     const birdPosition = camera.position;
     const collisionRadius = 3; // Bird collision radius
     
+    // Check plant collisions (game over condition)
+    for (let plant of particles) {
+        const distance = birdPosition.distanceTo(plant.mesh.position);
+        const plantCollisionRadius = plant.isFullyGrown ? plant.targetHeight * 0.5 : 0;
+        
+        if (distance < collisionRadius + plantCollisionRadius) {
+            // Game Over - hit a plant!
+            triggerGameOver('plant');
+            return;
+        }
+    }
+    
+    // Check animal collisions (collect money)
     animals.forEach(animal => {
         if (!animal.isAlive) return;
         
@@ -1167,6 +1191,7 @@ function checkBirdCollisions() {
             // Consume the animal
             const value = animal.consume();
             stats.moneyCollected += value;
+            gameState.currentScore = stats.moneyCollected;
             
             // Visual feedback for eating
             showEatEffect(animal.mesh.position, value, animal.stablecoin);
@@ -1223,6 +1248,141 @@ function showEatEffect(position, value, stablecoin) {
     }
     
     // Show value text (optional - could add floating text here)
+}
+
+// Trigger game over
+function triggerGameOver(reason) {
+    if (gameState.isGameOver) return;
+    
+    gameState.isGameOver = true;
+    gameState.endTime = Date.now();
+    
+    // Stop bird movement
+    birdControls.velocity.set(0, 0, 0);
+    birdControls.moveForward = false;
+    birdControls.moveBackward = false;
+    birdControls.moveLeft = false;
+    birdControls.moveRight = false;
+    birdControls.moveUp = false;
+    birdControls.moveDown = false;
+    birdControls.boost = false;
+    
+    // Update high score
+    if (gameState.currentScore > gameState.highScore) {
+        gameState.highScore = gameState.currentScore;
+        localStorage.setItem('stablecoinHuntHighScore', gameState.highScore.toString());
+    }
+    
+    // Show game over screen
+    showGameOverScreen(reason);
+    
+    console.log(`GAME OVER! Hit a ${reason}. Score: $${gameState.currentScore.toFixed(2)}`);
+}
+
+// Show game over screen
+function showGameOverScreen(reason) {
+    const gameOverDiv = document.createElement('div');
+    gameOverDiv.id = 'game-over-screen';
+    gameOverDiv.innerHTML = `
+        <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                    background: linear-gradient(135deg, rgba(255, 0, 0, 0.9), rgba(139, 0, 0, 0.9)); 
+                    color: white; padding: 40px; border-radius: 20px; text-align: center; 
+                    z-index: 2000; box-shadow: 0 10px 40px rgba(0,0,0,0.8); min-width: 400px;">
+            <h1 style="margin: 0 0 20px 0; font-size: 48px;">💀 GAME OVER 💀</h1>
+            <p style="font-size: 24px; margin: 10px 0;">You hit a poisonous plant!</p>
+            <div style="margin: 30px 0;">
+                <p style="font-size: 20px; margin: 10px 0;">Final Score: <span style="color: #FFD700; font-size: 32px; font-weight: bold;">$${gameState.currentScore.toFixed(2)}</span></p>
+                <p style="font-size: 16px; margin: 10px 0;">High Score: <span style="color: #FFD700;">$${gameState.highScore.toFixed(2)}</span></p>
+                ${gameState.startTime ? `<p style="font-size: 14px; margin: 10px 0;">Survived: ${Math.floor((gameState.endTime - gameState.startTime) / 1000)} seconds</p>` : ''}
+            </div>
+            <div style="margin-top: 30px;">
+                <button onclick="restartGame()" style="
+                    background: linear-gradient(135deg, #43e97b, #38f9d7);
+                    color: white; border: none; padding: 15px 30px; border-radius: 10px;
+                    font-size: 18px; font-weight: bold; cursor: pointer; margin: 0 10px;
+                    transition: transform 0.2s;">
+                    🔄 Try Again
+                </button>
+                <button onclick="exitToGarden()" style="
+                    background: linear-gradient(135deg, #667eea, #764ba2);
+                    color: white; border: none; padding: 15px 30px; border-radius: 10px;
+                    font-size: 18px; font-weight: bold; cursor: pointer; margin: 0 10px;
+                    transition: transform 0.2s;">
+                    🏡 Exit to Garden
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(gameOverDiv);
+    
+    // Make plants glow red to show danger
+    particles.forEach(plant => {
+        if (plant.mesh.visible) {
+            // Add red glow to plants
+            const glowGeometry = new THREE.SphereGeometry(plant.targetHeight * 0.8, 8, 6);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff0000,
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.BackSide
+            });
+            const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+            glowMesh.position.y = plant.targetHeight * 0.5;
+            plant.mesh.add(glowMesh);
+            
+            // Pulse the glow
+            const pulseGlow = () => {
+                if (gameState.isGameOver && glowMesh.parent) {
+                    glowMesh.material.opacity = 0.3 + Math.sin(Date.now() * 0.005) * 0.2;
+                    requestAnimationFrame(pulseGlow);
+                }
+            };
+            pulseGlow();
+        }
+    });
+}
+
+// Restart the game
+function restartGame() {
+    // Remove game over screen
+    const gameOverScreen = document.getElementById('game-over-screen');
+    if (gameOverScreen) gameOverScreen.remove();
+    
+    // Reset game state
+    gameState.isGameOver = false;
+    gameState.currentScore = 0;
+    gameState.startTime = Date.now();
+    stats.moneyCollected = 0;
+    
+    // Reset bird position
+    camera.position.set(0, 20, 80);
+    birdControls.velocity.set(0, 0, 0);
+    birdControls.rotation.set(0, 0, 0);
+    
+    // Clear all entities
+    clearParticles();
+    
+    // Update UI
+    updateStats();
+    
+    console.log('Game restarted! Avoid the plants, eat the animals!');
+}
+
+// Exit to garden view
+function exitToGarden() {
+    // Remove game over screen
+    const gameOverScreen = document.getElementById('game-over-screen');
+    if (gameOverScreen) gameOverScreen.remove();
+    
+    // Exit bird mode
+    birdControls.isFlying = false;
+    gameState.isGameOver = false;
+    toggleBirdMode();
+    
+    // Reset stats but keep entities
+    stats.moneyCollected = 0;
+    gameState.currentScore = 0;
+    updateStats();
 }
 
 // Update bird flight physics
@@ -1578,37 +1738,93 @@ function setupBirdControls() {
 
 // Toggle bird flight mode
 function toggleBirdMode() {
+    if (gameState.isGameOver) {
+        restartGame();
+        return;
+    }
+    
     birdControls.isFlying = !birdControls.isFlying;
     
     const flyBtn = document.getElementById('fly-btn');
     const flightStatus = document.getElementById('flight-status');
     
     if (birdControls.isFlying) {
-        // Enter bird mode
+        // Enter bird mode - start the game!
         birdControls.velocity.set(0, 0, 0);
         birdControls.rotation.set(0, 0, 0);
+        
+        // Initialize game state
+        gameState.isGameOver = false;
+        gameState.currentScore = stats.moneyCollected;
+        gameState.startTime = Date.now();
+        
+        // Load high score
+        const savedHighScore = localStorage.getItem('stablecoinHuntHighScore');
+        if (savedHighScore) {
+            gameState.highScore = parseFloat(savedHighScore);
+        }
         
         // Update UI
         flyBtn.textContent = '🛬 Land';
         flyBtn.classList.add('active');
         flightStatus.style.display = 'block';
+        flightStatus.innerHTML = '<span style="color: #FFD700;">🦅 Flying - Eat animals, avoid plants!</span>';
         
-        // Show instructions
+        // Show instructions with warning
         showBirdInstructions();
         
-        console.log('Bird mode activated! Press F to exit');
+        // Make plants look dangerous
+        highlightDangerousPlants();
+        
+        console.log('GAME STARTED! Eat animals for money, but AVOID THE PLANTS - they are poisonous!');
     } else {
         // Exit bird mode
         document.exitPointerLock();
         hideBirdInstructions();
+        removeHighlightFromPlants();
         
         // Update UI
         flyBtn.textContent = '🦅 Fly';
         flyBtn.classList.remove('active');
         flightStatus.style.display = 'none';
         
+        // Reset game state
+        gameState.isGameOver = false;
+        gameState.startTime = null;
+        
         console.log('Bird mode deactivated');
     }
+}
+
+// Highlight dangerous plants
+function highlightDangerousPlants() {
+    particles.forEach(plant => {
+        if (plant.mesh.visible && !plant.dangerGlow) {
+            // Add subtle red outline to warn about danger
+            const outlineGeometry = new THREE.SphereGeometry(plant.targetHeight * 0.6, 6, 4);
+            const outlineMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff0000,
+                transparent: true,
+                opacity: 0.15,
+                side: THREE.BackSide
+            });
+            plant.dangerGlow = new THREE.Mesh(outlineGeometry, outlineMaterial);
+            plant.dangerGlow.position.y = plant.targetHeight * 0.5;
+            plant.mesh.add(plant.dangerGlow);
+        }
+    });
+}
+
+// Remove highlight from plants
+function removeHighlightFromPlants() {
+    particles.forEach(plant => {
+        if (plant.dangerGlow) {
+            plant.mesh.remove(plant.dangerGlow);
+            plant.dangerGlow.geometry.dispose();
+            plant.dangerGlow.material.dispose();
+            plant.dangerGlow = null;
+        }
+    });
 }
 
 // Show bird flight instructions
@@ -1617,26 +1833,38 @@ function showBirdInstructions() {
     instructions.id = 'bird-instructions';
     instructions.innerHTML = `
         <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-                    background: rgba(0,0,0,0.8); color: white; padding: 20px; 
-                    border-radius: 10px; text-align: center; z-index: 1000;">
-            <h2>🦅 Bird Flight Mode</h2>
-            <p><strong>Click</strong> to capture mouse</p>
-            <p><strong>Mouse</strong> - Look around</p>
-            <p><strong>W/A/S/D</strong> - Fly forward/left/back/right</p>
-            <p><strong>Space</strong> - Fly up</p>
-            <p><strong>Shift</strong> - Fly down</p>
-            <p><strong>Q</strong> - Speed boost</p>
-            <p><strong>F</strong> - Exit bird mode</p>
+                    background: linear-gradient(135deg, rgba(0,0,0,0.9), rgba(50,0,0,0.9)); 
+                    color: white; padding: 30px; 
+                    border-radius: 15px; text-align: center; z-index: 1000;
+                    border: 2px solid #ff0000; box-shadow: 0 0 30px rgba(255,0,0,0.3);">
+            <h2 style="color: #FFD700; margin-bottom: 20px;">🦅 HUNTING GAME 🦅</h2>
+            <div style="background: rgba(255,0,0,0.2); padding: 10px; border-radius: 10px; margin-bottom: 15px;">
+                <p style="font-size: 18px; color: #ff6b6b; font-weight: bold;">⚠️ WARNING ⚠️</p>
+                <p style="color: #ffd700;">🦊 EAT Animals = 💰 Money</p>
+                <p style="color: #ff6b6b;">🌳 AVOID Plants = ☠️ GAME OVER!</p>
+            </div>
+            <div style="text-align: left; display: inline-block;">
+                <p><strong>Click</strong> - Capture mouse</p>
+                <p><strong>Mouse</strong> - Look around</p>
+                <p><strong>W/A/S/D</strong> - Fly directions</p>
+                <p><strong>Space</strong> - Fly up</p>
+                <p><strong>Shift</strong> - Dive down</p>
+                <p><strong>Q</strong> - Speed boost</p>
+                <p><strong>F</strong> - Exit game</p>
+            </div>
+            <p style="margin-top: 15px; color: #ffd700; font-size: 14px;">
+                High Score: $${gameState.highScore.toFixed(2)}
+            </p>
         </div>
     `;
     document.body.appendChild(instructions);
     
-    // Auto-hide after 5 seconds
+    // Auto-hide after 7 seconds
     setTimeout(() => {
         if (instructions.parentNode) {
             instructions.style.opacity = '0.3';
         }
-    }, 5000);
+    }, 7000);
 }
 
 // Hide bird flight instructions
@@ -1653,3 +1881,7 @@ document.addEventListener('DOMContentLoaded', () => {
     animate();
     setupEventListeners();
 });
+
+// Make game functions globally accessible for HTML buttons
+window.restartGame = restartGame;
+window.exitToGarden = exitToGarden;
