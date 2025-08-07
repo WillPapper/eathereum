@@ -23,6 +23,7 @@ reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth", tag = "v
 alloy-primitives = "1.0"
 alloy-sol-types = { version = "1.0", features = ["json"] }
 alloy-rpc-types = { version = "1.0", features = ["eth"], default-features = false }
+alloy-eips = "1.0"
 
 # async
 eyre = "0.6"

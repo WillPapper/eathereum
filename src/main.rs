@@ -1,4 +1,5 @@
-use alloy_primitives::{Address, BlockNumber, U256};
+use alloy_eips::eip2718::Typed2718;
+use alloy_primitives::{BlockNumber};
 use clap::{Args, Parser};
 use eyre::OptionExt;
 use futures::{FutureExt, StreamExt};
@@ -116,26 +117,36 @@ where
                     .copied()
                     .unwrap_or_default();
                 
-                // Extract transaction data - for now we'll just track basic info
-                // In the next step, we'll parse the actual transaction data
-                let to: Option<Address> = None; // Will extract in the next step when parsing ERC20 calls
-                let value = U256::ZERO; // Will extract actual value when parsing
-                let input_len = 0; // Will extract input data when parsing
+                // Extract transaction data - we can get this from the execution outcome
+                // The chain contains both blocks and their execution outcomes
+                // For direct transaction data, we'd need to decode the envelope
+                // Let's at least try to get the basic transaction type
+                let tx_type = transaction.ty();
                 
-                // Log transaction details for now
+                // Log transaction details
                 info!(
                     block = %block_number,
                     tx_index = %tx_index,
                     tx_hash = ?tx_hash,
                     from = ?sender,
-                    to = ?to,
-                    value = %value,
-                    input_len = %input_len,
+                    tx_type = %tx_type,
                     "Processing transaction"
                 );
+                
+                // Access transaction receipts from the execution outcome for actual data
+                // The execution outcome contains receipts for each block
+                // Note: receipts are grouped by block, not individual transactions
+                
+                // TODO: Access the execution outcome properly to get:
+                // - Transaction receipts with logs
+                // - Extract logs from receipts to identify ERC20 events
+                // - Transfer events (topic0: 0xddf252ad...)
+                // - Approval events
+                // - Mint/Burn events for stablecoins
 
                 // TODO: In next step, we'll parse transactions to identify:
-                // - ERC20 transfers (Transfer event)
+                // - ERC20 transfers (Transfer event - selector 0xa9059cbb)
+                // - ERC20 transferFrom (selector 0x23b872dd)
                 // - Stablecoin contracts (USDT, USDC, DAI, etc.)
                 // - Mints and burns
                 // - Other relevant stablecoin operations
