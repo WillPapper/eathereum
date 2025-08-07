@@ -14,8 +14,7 @@ stablecoin-visualizer/
 │   ├── src/
 │   │   └── main.rs        # Alloy-based transaction monitor
 │   ├── Cargo.toml         # Dependencies (Alloy, Tokio, WebSocket)
-│   ├── Dockerfile         # Multi-stage build for deployment
-│   ├── render.yaml        # Render.com deployment config
+│   ├── render.yaml        # Render.com native Rust deployment config
 │   └── README.md          # Server documentation
 ├── visualizer/            # Frontend game
 │   ├── index.html        # Main HTML
@@ -133,11 +132,17 @@ transferCall::abi_decode(input, false) // Not &input
   - `PORT`: 8080 (WebSocket)
   - `HEALTH_PORT`: 8081 (Health checks)
 
-### Docker Configuration
-- Multi-stage build for optimal size
-- Final image ~50MB
-- Runs as non-root user
-- Health check endpoint included
+### Render Native Rust Runtime
+- **No Docker needed**: Render's native Rust buildpack handles everything
+- **Automatic version detection**: Reads Cargo.lock to use correct Rust version
+- **Simpler configuration**: Just specify build and start commands
+- **Faster builds**: No Docker layer caching overhead
+- **render.yaml configuration**:
+  ```yaml
+  runtime: rust
+  buildCommand: cargo build --release
+  startCommand: ./target/release/block-monitor
+  ```
 
 ## Code Quality Enforcement
 
@@ -153,7 +158,6 @@ transferCall::abi_decode(input, false) // Not &input
 - cargo clippy -- -D warnings  # Linting
 - cargo test               # Tests
 - cargo build --release    # Build check
-- docker build            # Container build
 ```
 
 ### Clippy Compliance
@@ -177,12 +181,23 @@ cargo clippy              # Run linter
 cargo build --release     # Build optimized binary
 cargo run                 # Run locally
 
-# Docker
-docker-compose up         # Run with Docker locally
-
 # Testing WebSocket
 wscat -c ws://localhost:8080  # Connect to WebSocket
 ```
+
+## Recent Migration from Docker to Native Rust Runtime
+
+### Why We Removed Docker
+- **Cargo.lock v4 incompatibility**: Docker image rust:1.75 couldn't read newer lock files
+- **Render's native support**: Built-in Rust buildpack handles versions automatically
+- **Simpler maintenance**: No need to update Docker images for new Rust versions
+- **Faster deployments**: Skip Docker build step entirely
+
+### Migration Steps Taken
+1. Deleted `Dockerfile` from block-monitor directory
+2. Updated `render.yaml` from `runtime: docker` to `runtime: rust`
+3. Specified `buildCommand` and `startCommand` directly
+4. Let Render auto-detect Rust version from Cargo.lock
 
 ## Gotchas and Solutions
 
@@ -195,16 +210,23 @@ wscat -c ws://localhost:8080  # Connect to WebSocket
 - Stablecoin addresses are different from mainnet
 - Chain ID: 8453
 
-### 3. Render.com Limitations
-- Cron jobs can't run faster than 1 minute
-- Solution: Use background worker with loop
+### 3. Render.com Deployment
+- **Native Rust Runtime**: No Docker required, Render handles Rust versions
+- **Cargo.lock Version Issues**: Solved by using native runtime instead of Docker
+- **Background Workers**: Perfect for continuous polling (vs cron jobs)
+- **Auto-deploy**: Enabled by default in render.yaml
 
 ### 4. Transaction Data Access
 - RPC transactions require `BlockTransactionsKind::Full`
 - Use `tx.tx_hash()` not `tx.hash`
 - Import `TransactionResponse` trait for methods
 
-### 5. Decimal Handling
+### 5. Docker vs Native Runtime
+- **Cargo.lock v4 Issue**: Older Docker images (rust:1.75) don't support lock file v4
+- **Solution**: Use Render's native Rust runtime which auto-detects versions
+- **Benefits**: Simpler config, faster builds, automatic Rust updates
+
+### 6. Decimal Handling
 - USDC/USDT: 6 decimals
 - DAI: 18 decimals
 - Format amounts accordingly
