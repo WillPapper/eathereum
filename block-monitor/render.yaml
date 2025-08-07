@@ -7,7 +7,9 @@ services:
     startCommand: ./target/release/block-monitor
     envVars:
       - key: RPC_URL
-        sync: false  # Set this in Render dashboard
+        sync: true  # Synced across environments
+      - key: REDIS_URL
+        sync: true  # Synced across environments (optional)
       - key: PORT
         value: 8080
       - key: HEALTH_PORT

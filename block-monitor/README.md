@@ -6,7 +6,8 @@ A Rust-based blockchain monitor that tracks stablecoin transactions (USDC, USDT,
 
 - Polls RPC endpoint every 2 seconds for new blocks
 - Parses ERC-20 transfer and transferFrom transactions
-- Broadcasts transaction data via WebSocket to connected clients
+- Publishes transactions to Redis for scalable distribution
+- Broadcasts transaction data via WebSocket to connected clients (backwards compatible)
 - Supports multiple concurrent WebSocket connections
 - Health check endpoint for monitoring
 
@@ -74,6 +75,7 @@ The server runs as a continuous background worker that polls every 2 seconds:
 
 3. **Set Environment Variables**
    - `RPC_URL`: Your Base network RPC endpoint (Alchemy, Infura, QuickNode, etc.)
+   - `REDIS_URL`: Redis connection URL (optional, format: `redis://host:port`)
    - `PORT`: 8080 (WebSocket port)
    - `HEALTH_PORT`: 8081 (Health check port)
    - `RUST_LOG`: info
@@ -121,9 +123,49 @@ Deploy directly using the provided configuration with auto-deploy enabled:
 - `RPC_URL`: Base network RPC endpoint (required)
   - Supports any provider: Alchemy, Infura, QuickNode, etc.
   - Example: `https://base-mainnet.g.alchemy.com/v2/YOUR_KEY`
+- `REDIS_URL`: Redis connection URL (optional)
+  - Format: `redis://username:password@host:port/db`
+  - Example: `redis://localhost:6379`
 - `PORT`: WebSocket server port (default: 8080)
 - `HEALTH_PORT`: Health check server port (default: 8081)
 - `RUST_LOG`: Log level (default: info)
+
+## Redis Integration
+
+When `REDIS_URL` is configured, the monitor publishes transaction data to Redis:
+
+### Data Structures
+
+1. **Pub/Sub Channel**: `stablecoin:transactions`
+   - Real-time transaction stream
+   - Clients can subscribe to receive instant updates
+
+2. **List**: `stablecoin:recent_transactions`
+   - Stores last 1000 transactions
+   - LIFO order (newest first)
+   - Use `LRANGE stablecoin:recent_transactions 0 99` to get last 100
+
+3. **Keys**: `stablecoin:tx:{tx_hash}`
+   - Individual transaction lookup by hash
+   - TTL: 1 hour
+   - Example: `GET stablecoin:tx:0xabc123...`
+
+### Connecting WebSocket Service to Redis
+
+```javascript
+// Example Node.js WebSocket service
+const redis = require('redis');
+const subscriber = redis.createClient({ url: process.env.REDIS_URL });
+
+subscriber.subscribe('stablecoin:transactions');
+subscriber.on('message', (channel, message) => {
+  const transaction = JSON.parse(message);
+  // Broadcast to WebSocket clients
+  wss.clients.forEach(client => {
+    client.send(message);
+  });
+});
+```
 
 ## Architecture
 
