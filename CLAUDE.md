@@ -1,9 +1,10 @@
 # Stablecoin Visualizer
 
 ## Project Overview
-This project consists of two main components:
-1. **Block Monitor**: A Rust server using Alloy that monitors Base network for stablecoin transactions
-2. **Visualizer**: A Three.js-based game that visualizes blockchain activity as an ecosystem where players interact with animals representing transactions
+This project consists of three main components:
+1. **Block Monitor**: A Rust server using Alloy that monitors Base network for stablecoin transactions and publishes to Redis
+2. **Redis Stream Consumer**: A Rust microservice that consumes from Redis streams and broadcasts via WebSocket
+3. **Visualizer**: A Three.js-based game that visualizes blockchain activity as an ecosystem where players interact with animals representing transactions
 
 ## Current Architecture
 
@@ -13,16 +14,23 @@ stablecoin-visualizer/
 ├── block-monitor/          # Rust server for blockchain monitoring
 │   ├── src/
 │   │   └── main.rs        # Alloy-based transaction monitor
-│   ├── Cargo.toml         # Dependencies (Alloy, Tokio, WebSocket)
+│   ├── Cargo.toml         # Dependencies (Alloy, Tokio, Redis)
 │   ├── render.yaml        # Render.com native Rust deployment config
 │   └── README.md          # Server documentation
+├── redis-stream-consumer/  # Redis to WebSocket bridge service
+│   ├── src/
+│   │   └── main.rs        # Redis stream consumer with WebSocket server
+│   ├── Cargo.toml         # Dependencies (Redis, Tokio, WebSocket)
+│   ├── render.yaml        # Render.com web service config
+│   └── README.md          # Service documentation
 ├── visualizer/            # Frontend game
 │   ├── index.html        # Main HTML
 │   ├── styles.css        # Game styling
 │   └── visualizer.js     # Three.js game logic
 ├── .github/
 │   └── workflows/
-│       └── block-monitor.yml  # CI/CD with formatting & clippy
+│       ├── block-monitor.yml         # CI/CD for block monitor
+│       └── redis-stream-consumer.yml  # CI/CD for Redis consumer
 ├── .githooks/
 │   └── pre-commit        # Auto-runs cargo fmt on commits
 └── setup-hooks.sh        # One-time Git hooks setup
@@ -143,6 +151,39 @@ transferCall::abi_decode(input, false) // Not &input
   buildCommand: cargo build --release
   startCommand: ./target/release/block-monitor
   ```
+
+## Redis Stream Consumer
+
+### Purpose
+Bridges the gap between Redis streams and WebSocket clients, enabling real-time transaction updates for web applications.
+
+### Key Features
+- **Redis Consumer Groups**: Reliable message processing with acknowledgments
+- **WebSocket Broadcasting**: Simultaneous updates to multiple connected clients
+- **Auto-reconnection**: Handles Redis and client connection failures gracefully
+- **Health Monitoring**: Dedicated health check endpoint for service monitoring
+
+### Configuration
+```bash
+# Environment Variables
+REDIS_URL=redis://your-redis-instance:6379
+REDIS_STREAM_KEY=stablecoin:transactions
+CONSUMER_GROUP=websocket-publisher
+PORT=8080                  # WebSocket server
+HEALTH_PORT=8081          # Health checks
+```
+
+### Data Flow
+1. Block Monitor publishes transactions to Redis stream
+2. Redis Stream Consumer reads using consumer groups
+3. Acknowledges messages after successful broadcast
+4. Broadcasts JSON data to all WebSocket clients
+
+### Deployment
+- **Service Type**: Web service on Render.com
+- **Endpoints**:
+  - WebSocket: `wss://your-service.onrender.com/ws`
+  - Health: `https://your-service.onrender.com/health`
 
 ## Code Quality Enforcement
 
