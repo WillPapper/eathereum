@@ -350,7 +350,7 @@ impl StablecoinMonitor {
 
                 // Add to main stream with automatic trimming to last 10000 entries
                 if let Err(e) = redis::cmd("XADD")
-                    .arg(&stream_key)
+                    .arg(stream_key)
                     .arg("MAXLEN")
                     .arg("~")
                     .arg(10000)
