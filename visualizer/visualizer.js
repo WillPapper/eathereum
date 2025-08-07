@@ -4,11 +4,11 @@ let particles = [];
 let isPaused = false;
 let ws = null;
 
-// Stablecoin colors
+// Stablecoin colors - nature-inspired, vibrant colors
 const STABLECOIN_COLORS = {
-    USDC: 0x2775CA,  // Blue
-    USDT: 0x26A17B,  // Green
-    DAI: 0xF5AC37   // Yellow/Orange
+    USDC: 0x4A90E2,  // Sky blue - like morning sky
+    USDT: 0x50C878,  // Emerald green - like fresh leaves
+    DAI: 0xFFD700   // Golden yellow - like sunflowers
 };
 
 // Statistics
@@ -70,9 +70,10 @@ class TransactionParticle {
         }
         
         // Position based on amount (larger amounts start higher)
-        this.mesh.position.x = (Math.random() - 0.5) * 100;
+        // Particles appear above the garden
+        this.mesh.position.x = (Math.random() - 0.5) * 80;
         this.mesh.position.y = 50 + (amountLog * 5); // Higher start for larger amounts
-        this.mesh.position.z = (Math.random() - 0.5) * 100;
+        this.mesh.position.z = (Math.random() - 0.5) * 80;
         
         // Velocity affected by size (larger = slower fall)
         const massFactor = 1 / (1 + size * 0.3);
@@ -134,17 +135,34 @@ class TransactionParticle {
         this.mesh.rotation.y += this.rotation.y;
         this.mesh.rotation.z += this.rotation.z;
         
-        // Apply gravity (less for larger amounts)
-        this.velocity.y -= 0.01 * (1 / (1 + this.size * 0.2));
+        // Apply gravity (less for larger amounts) - gentle like falling through air
+        this.velocity.y -= 0.008 * (1 / (1 + this.size * 0.2));
         
-        // Bounce off floor with energy loss based on size
-        if (this.mesh.position.y < -30 + this.size) {
-            this.mesh.position.y = -30 + this.size;
-            this.velocity.y *= -0.5 * (1 / (1 + this.size * 0.1));
+        // Add slight wind effect
+        this.velocity.x += Math.sin(this.age * 0.02) * 0.002;
+        this.velocity.z += Math.cos(this.age * 0.015) * 0.002;
+        
+        // Land on grass (ground at y = -30)
+        const groundLevel = -30 + this.size;
+        if (this.mesh.position.y < groundLevel) {
+            this.mesh.position.y = groundLevel;
+            
+            // Gentle bounce on grass
+            this.velocity.y *= -0.3 * (1 / (1 + this.size * 0.1));
             
             // Add some lateral movement on bounce for variety
-            this.velocity.x += (Math.random() - 0.5) * 0.1;
-            this.velocity.z += (Math.random() - 0.5) * 0.1;
+            this.velocity.x += (Math.random() - 0.5) * 0.05;
+            this.velocity.z += (Math.random() - 0.5) * 0.05;
+            
+            // Friction on ground
+            this.velocity.x *= 0.95;
+            this.velocity.z *= 0.95;
+            
+            // Small particles can "settle" into grass
+            if (this.size < 0.5 && Math.abs(this.velocity.y) < 0.1) {
+                this.velocity.y = 0;
+                this.mesh.position.y = groundLevel - this.size * 0.3;
+            }
         }
         
         // Pulse effect for large amounts
@@ -181,12 +199,30 @@ class TransactionParticle {
     }
 }
 
+// Garden elements storage
+let gardenElements = [];
+
 // Initialize Three.js scene
 function init() {
-    // Scene
+    // Scene with sky gradient
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0a0a);
-    scene.fog = new THREE.Fog(0x0a0a0a, 100, 200);
+    
+    // Create gradient background (sky)
+    const canvas = document.createElement('canvas');
+    canvas.width = 2;
+    canvas.height = 512;
+    const context = canvas.getContext('2d');
+    const gradient = context.createLinearGradient(0, 0, 0, 512);
+    gradient.addColorStop(0, '#87CEEB'); // Sky blue at top
+    gradient.addColorStop(0.4, '#98D8E8'); // Lighter blue
+    gradient.addColorStop(0.7, '#FDB777'); // Sunset orange
+    gradient.addColorStop(1, '#FDD085'); // Warm horizon
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 2, 512);
+    
+    const skyTexture = new THREE.CanvasTexture(canvas);
+    scene.background = skyTexture;
+    scene.fog = new THREE.Fog(0xf0f4f7, 50, 200);
     
     // Camera
     const container = document.getElementById('canvas-container');
@@ -203,27 +239,202 @@ function init() {
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(renderer.domElement);
     
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    // Lighting - more natural for garden
+    const ambientLight = new THREE.AmbientLight(0xffefd5, 0.5); // Warm ambient
     scene.add(ambientLight);
     
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.6);
-    directionalLight.position.set(10, 20, 10);
-    scene.add(directionalLight);
+    // Sun light
+    const sunLight = new THREE.DirectionalLight(0xfffaf0, 0.8);
+    sunLight.position.set(30, 50, 20);
+    sunLight.castShadow = true;
+    sunLight.shadow.camera.left = -100;
+    sunLight.shadow.camera.right = 100;
+    sunLight.shadow.camera.top = 100;
+    sunLight.shadow.camera.bottom = -100;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    scene.add(sunLight);
     
-    // Grid helper
-    const gridHelper = new THREE.GridHelper(100, 20, 0x444444, 0x222222);
-    gridHelper.position.y = -30;
-    scene.add(gridHelper);
+    // Create garden floor (grass)
+    const grassGeometry = new THREE.PlaneGeometry(200, 200);
+    const grassMaterial = new THREE.MeshLambertMaterial({ 
+        color: 0x7CBA3F,
+        side: THREE.DoubleSide
+    });
+    const grass = new THREE.Mesh(grassGeometry, grassMaterial);
+    grass.rotation.x = -Math.PI / 2;
+    grass.position.y = -30;
+    grass.receiveShadow = true;
+    scene.add(grass);
     
-    // Axes helper (optional, for debugging)
-    // const axesHelper = new THREE.AxesHelper(50);
-    // scene.add(axesHelper);
+    // Create garden elements
+    createGardenElements();
     
     // Handle window resize
     window.addEventListener('resize', onWindowResize);
+}
+
+// Create garden environment
+function createGardenElements() {
+    // Create trees
+    for (let i = 0; i < 8; i++) {
+        const tree = createTree();
+        const angle = (i / 8) * Math.PI * 2;
+        const radius = 60 + Math.random() * 20;
+        tree.position.set(
+            Math.cos(angle) * radius,
+            -30,
+            Math.sin(angle) * radius
+        );
+        tree.scale.set(
+            0.8 + Math.random() * 0.4,
+            0.8 + Math.random() * 0.4,
+            0.8 + Math.random() * 0.4
+        );
+        scene.add(tree);
+        gardenElements.push(tree);
+    }
+    
+    // Create flower patches
+    for (let i = 0; i < 15; i++) {
+        const flowerPatch = createFlowerPatch();
+        flowerPatch.position.set(
+            (Math.random() - 0.5) * 100,
+            -30,
+            (Math.random() - 0.5) * 100
+        );
+        scene.add(flowerPatch);
+        gardenElements.push(flowerPatch);
+    }
+    
+    // Create bushes
+    for (let i = 0; i < 10; i++) {
+        const bush = createBush();
+        bush.position.set(
+            (Math.random() - 0.5) * 120,
+            -30,
+            (Math.random() - 0.5) * 120
+        );
+        scene.add(bush);
+        gardenElements.push(bush);
+    }
+    
+    // Create garden path
+    createGardenPath();
+}
+
+// Create a tree
+function createTree() {
+    const tree = new THREE.Group();
+    
+    // Trunk
+    const trunkGeometry = new THREE.CylinderGeometry(1.5, 2, 8);
+    const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+    trunk.position.y = 4;
+    trunk.castShadow = true;
+    tree.add(trunk);
+    
+    // Foliage (multiple spheres for organic look)
+    const foliageColors = [0x228B22, 0x32CD32, 0x3CB371];
+    for (let i = 0; i < 3; i++) {
+        const radius = 5 + Math.random() * 2;
+        const foliageGeometry = new THREE.SphereGeometry(radius, 8, 6);
+        const foliageMaterial = new THREE.MeshLambertMaterial({ 
+            color: foliageColors[i]
+        });
+        const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial);
+        foliage.position.set(
+            (Math.random() - 0.5) * 3,
+            10 + i * 2,
+            (Math.random() - 0.5) * 3
+        );
+        foliage.castShadow = true;
+        tree.add(foliage);
+    }
+    
+    return tree;
+}
+
+// Create flower patch
+function createFlowerPatch() {
+    const patch = new THREE.Group();
+    const flowerColors = [0xFF69B4, 0xFFB6C1, 0xFFA07A, 0xFFFF00, 0xFF1493];
+    
+    for (let i = 0; i < 5; i++) {
+        // Stem
+        const stemGeometry = new THREE.CylinderGeometry(0.1, 0.1, 2);
+        const stemMaterial = new THREE.MeshLambertMaterial({ color: 0x228B22 });
+        const stem = new THREE.Mesh(stemGeometry, stemMaterial);
+        stem.position.set(
+            (Math.random() - 0.5) * 3,
+            1,
+            (Math.random() - 0.5) * 3
+        );
+        
+        // Flower
+        const flowerGeometry = new THREE.SphereGeometry(0.5, 6, 4);
+        const flowerMaterial = new THREE.MeshLambertMaterial({ 
+            color: flowerColors[Math.floor(Math.random() * flowerColors.length)]
+        });
+        const flower = new THREE.Mesh(flowerGeometry, flowerMaterial);
+        flower.position.set(
+            stem.position.x,
+            2.5,
+            stem.position.z
+        );
+        
+        patch.add(stem);
+        patch.add(flower);
+    }
+    
+    return patch;
+}
+
+// Create bush
+function createBush() {
+    const bushGeometry = new THREE.SphereGeometry(3, 8, 6);
+    const bushMaterial = new THREE.MeshLambertMaterial({ 
+        color: 0x2F4F2F
+    });
+    const bush = new THREE.Mesh(bushGeometry, bushMaterial);
+    bush.position.y = 2;
+    bush.scale.set(1.5, 0.8, 1.5);
+    bush.castShadow = true;
+    return bush;
+}
+
+// Create garden path
+function createGardenPath() {
+    const pathGeometry = new THREE.PlaneGeometry(10, 100);
+    const pathMaterial = new THREE.MeshLambertMaterial({ 
+        color: 0xD2B48C,
+        side: THREE.DoubleSide
+    });
+    const path = new THREE.Mesh(pathGeometry, pathMaterial);
+    path.rotation.x = -Math.PI / 2;
+    path.position.y = -29.9;
+    scene.add(path);
+    
+    // Add stepping stones
+    for (let i = -40; i < 40; i += 8) {
+        const stoneGeometry = new THREE.CylinderGeometry(2, 2, 0.3, 8);
+        const stoneMaterial = new THREE.MeshLambertMaterial({ 
+            color: 0x808080
+        });
+        const stone = new THREE.Mesh(stoneGeometry, stoneMaterial);
+        stone.position.set(
+            (Math.random() - 0.5) * 2,
+            -29.8,
+            i + (Math.random() - 0.5) * 2
+        );
+        stone.rotation.x = Math.PI / 2;
+        scene.add(stone);
+    }
 }
 
 // Handle window resize
@@ -285,12 +496,24 @@ function animate() {
         return alive;
     });
     
-    // Rotate camera slightly for dynamic view
+    // Animate garden elements
     if (!isPaused) {
         const time = Date.now() * 0.0001;
+        
+        // Gentle camera movement around garden
         camera.position.x = Math.cos(time) * 80;
         camera.position.z = Math.sin(time) * 80;
-        camera.lookAt(0, 0, 0);
+        camera.position.y = 20 + Math.sin(time * 2) * 5; // Slight vertical movement
+        camera.lookAt(0, -10, 0);
+        
+        // Animate flowers and bushes with gentle sway
+        gardenElements.forEach((element, index) => {
+            if (element.children.length > 0) {
+                // Gentle swaying motion for trees and flowers
+                element.rotation.z = Math.sin(time * 2 + index) * 0.02;
+                element.rotation.x = Math.cos(time * 1.5 + index) * 0.01;
+            }
+        });
     }
     
     renderer.render(scene, camera);
