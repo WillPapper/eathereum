@@ -1,7 +1,7 @@
 # Stablecoin Visualizer - Reth Execution Extension
 
 ## Project Overview
-This is a Reth Execution Extension (ExEx) that processes blockchain data to track and visualize stablecoin activity on Ethereum. It's built using the Reth node infrastructure and processes blocks in real-time as well as historical data through backfilling.
+This is a Reth Execution Extension (ExEx) that processes blockchain data to track and visualize stablecoin activity on Base network. It's built using the Reth node infrastructure and processes blocks in real-time as well as historical data through backfilling.
 
 ## Key Learnings
 
@@ -77,10 +77,10 @@ cargo run -- node --backfill-from-block 1000000
 
 ## Next Steps for Stablecoin Tracking
 
-### 1. Identify Stablecoin Contracts
-- USDT: `0xdac17f958d2ee523a2206206994597c13d831ec7`
-- USDC: `0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48`
-- DAI: `0x6b175474e89094c44da98b954eedeac495271d0f`
+### 1. Identify Stablecoin Contracts on Base Network
+- USDC on Base: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
+- USDT on Base: `0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2`
+- DAI on Base: `0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb`
 
 ### 2. Parse ERC20 Events
 - Transfer event signature: `0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef`
