@@ -38,7 +38,6 @@ The included GitHub Actions workflow:
 - Checks code formatting
 - Runs clippy linter
 - Builds the Rust binary
-- Builds Docker image
 - If all checks pass → Render auto-deploys
 
 ## Manual Deployment Control
