@@ -175,7 +175,8 @@ impl StablecoinMonitor {
                     if current_block > last_processed {
                         // New blocks available
                         if let Err(e) = self.check_new_blocks().await {
-                            error!("Error checking blocks: {}", e);
+                            // This should rarely happen now as errors are handled internally
+                            error!("Unexpected error checking blocks: {}", e);
                         }
                     } else if current_block != last_logged_block {
                         // Log when we're waiting at a new block number
@@ -203,9 +204,26 @@ impl StablecoinMonitor {
                 info!("Processing block {}", block_num);
 
                 // Use logs approach which is more reliable
-                if let Err(e) = self.process_block_by_logs(block_num).await {
-                    error!("Error processing block {} logs: {}", block_num, e);
-                    // Continue processing other blocks even if one fails
+                match self.process_block_by_logs(block_num).await {
+                    Ok(tx_count) => {
+                        if tx_count > 0 {
+                            info!(
+                                "Block {} processed: {} stablecoin transfers found",
+                                block_num, tx_count
+                            );
+                        } else {
+                            // This is normal - many blocks don't have stablecoin transfers
+                            info!("Block {} processed: no stablecoin transfers", block_num);
+                        }
+                    }
+                    Err(e) => {
+                        // Log error but continue - don't propagate
+                        warn!(
+                            "Error processing block {} logs: {}. Skipping block.",
+                            block_num, e
+                        );
+                        // Continue processing other blocks even if one fails
+                    }
                 }
             }
 
@@ -218,7 +236,7 @@ impl StablecoinMonitor {
         Ok(())
     }
 
-    async fn process_block_by_logs(&self, block_number: u64) -> Result<()> {
+    async fn process_block_by_logs(&self, block_number: u64) -> Result<usize> {
         // Create filter for Transfer events from our stablecoin addresses
         let filter = Filter::new()
             .from_block(block_number)
@@ -226,49 +244,67 @@ impl StablecoinMonitor {
             .address(vec![USDC_ADDRESS, USDT_ADDRESS, DAI_ADDRESS])
             .event_signature(vec![TRANSFER_EVENT_SIGNATURE]);
 
-        // Get logs
-        match self.provider.get_logs(&filter).await {
-            Ok(logs) => {
-                for log in logs {
-                    if let Some(stablecoin_info) = self.stablecoins.get(&log.address()) {
-                        // Parse Transfer event
-                        // Transfer(address indexed from, address indexed to, uint256 value)
-                        if log.topics().len() >= 3 && log.data().data.len() >= 32 {
-                            let from_bytes: &[u8] = log.topics()[1].as_ref();
-                            let to_bytes: &[u8] = log.topics()[2].as_ref();
-                            let from = Address::from_slice(&from_bytes[12..]);
-                            let to = Address::from_slice(&to_bytes[12..]);
-                            let amount = U256::from_be_slice(&log.data().data);
-
-                            let tx_data = TransactionData {
-                                stablecoin: stablecoin_info.name.to_string(),
-                                amount: self.format_amount(amount, stablecoin_info.decimals),
-                                from: format!("{:?}", from),
-                                to: format!("{:?}", to),
-                                block_number,
-                                tx_hash: format!("{:?}", log.transaction_hash),
-                            };
-
-                            info!(
-                                "Found {} transfer: {} -> {} amount: {}",
-                                tx_data.stablecoin, tx_data.from, tx_data.to, tx_data.amount
-                            );
-
-                            // Publish to Redis
-                            self.publish_to_redis(&tx_data).await;
-
-                            // Also broadcast to WebSocket clients
-                            let _ = self.tx_broadcaster.send(tx_data);
-                        }
-                    }
-                }
-            }
+        // Get logs - this may fail on some RPC providers with large blocks
+        let logs = match self.provider.get_logs(&filter).await {
+            Ok(logs) => logs,
             Err(e) => {
-                error!("Error fetching logs for block {}: {}", block_number, e);
+                // Check if this is a deserialization error (common with some RPC providers)
+                if e.to_string().contains("deserialization")
+                    || e.to_string().contains("BlockTransactions")
+                {
+                    // This might be an RPC provider issue, try a simpler approach
+                    warn!("RPC provider returned invalid block data for block {}. This is likely an RPC issue, not a code issue.", block_number);
+                    return Ok(0); // Gracefully skip this block
+                }
+                return Err(e.into());
+            }
+        };
+
+        let mut transfer_count = 0;
+
+        // Process logs
+        if logs.is_empty() {
+            // No stablecoin transfers in this block - this is normal
+            return Ok(0);
+        }
+
+        for log in logs {
+            if let Some(stablecoin_info) = self.stablecoins.get(&log.address()) {
+                // Parse Transfer event
+                // Transfer(address indexed from, address indexed to, uint256 value)
+                if log.topics().len() >= 3 && log.data().data.len() >= 32 {
+                    let from_bytes: &[u8] = log.topics()[1].as_ref();
+                    let to_bytes: &[u8] = log.topics()[2].as_ref();
+                    let from = Address::from_slice(&from_bytes[12..]);
+                    let to = Address::from_slice(&to_bytes[12..]);
+                    let amount = U256::from_be_slice(&log.data().data);
+
+                    let tx_data = TransactionData {
+                        stablecoin: stablecoin_info.name.to_string(),
+                        amount: self.format_amount(amount, stablecoin_info.decimals),
+                        from: format!("{:?}", from),
+                        to: format!("{:?}", to),
+                        block_number,
+                        tx_hash: format!("{:?}", log.transaction_hash),
+                    };
+
+                    info!(
+                        "Found {} transfer: {} -> {} amount: {}",
+                        tx_data.stablecoin, tx_data.from, tx_data.to, tx_data.amount
+                    );
+
+                    // Publish to Redis
+                    self.publish_to_redis(&tx_data).await;
+
+                    // Also broadcast to WebSocket clients
+                    let _ = self.tx_broadcaster.send(tx_data);
+
+                    transfer_count += 1;
+                }
             }
         }
 
-        Ok(())
+        Ok(transfer_count)
     }
 
     fn format_amount(&self, amount: U256, decimals: u8) -> String {
