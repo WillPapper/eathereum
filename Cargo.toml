@@ -17,6 +17,7 @@ reth-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0", f
 reth-ethereum-cli = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-provider = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 reth-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
+reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth", tag = "v1.6.0" }
 
 # alloy
 alloy-primitives = "1.0"

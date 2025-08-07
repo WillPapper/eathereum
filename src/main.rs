@@ -1,4 +1,4 @@
-use alloy_primitives::BlockNumber;
+use alloy_primitives::{Address, BlockNumber, U256};
 use clap::{Args, Parser};
 use eyre::OptionExt;
 use futures::{FutureExt, StreamExt};
@@ -79,24 +79,68 @@ where
         Ok(())
     }
 
+
     /// Processes the committed chain for stablecoin data
     fn process_committed_chain(&self, chain: &Chain) -> eyre::Result<()> {
         let blocks = chain.blocks().len();
-        let transactions =
+        let total_transactions =
             chain.blocks().values().map(|block| block.transaction_count()).sum::<usize>();
 
         info!(
             first_block = %chain.execution_outcome().first_block,
             %blocks,
-            %transactions,
+            %total_transactions,
             "Processing blocks for stablecoin data"
         );
 
-        // TODO: Extract and process stablecoin-related transactions
-        // - Identify stablecoin contract addresses (USDT, USDC, DAI, etc.)
-        // - Track transfers, mints, burns
-        // - Calculate metrics (volume, velocity, etc.)
-        // - Store/export data for visualization
+        // Loop through all blocks in the chain
+        for (block_number, block) in chain.blocks() {
+            info!(
+                block_number = %block_number,
+                tx_count = %block.transaction_count(),
+                "Processing block"
+            );
+
+            // Loop through all transactions in the block
+            // We need to access transactions and senders separately
+            let transactions: Vec<_> = block.body().transactions().collect();
+            
+            // Each transaction should have a corresponding sender
+            for (tx_index, transaction) in transactions.iter().enumerate() {
+                // Get transaction hash for identification
+                let tx_hash = transaction.hash();
+                
+                // Get the sender - blocks have recovered senders
+                let sender = block.senders()
+                    .get(tx_index)
+                    .copied()
+                    .unwrap_or_default();
+                
+                // Extract transaction data - for now we'll just track basic info
+                // In the next step, we'll parse the actual transaction data
+                let to: Option<Address> = None; // Will extract in the next step when parsing ERC20 calls
+                let value = U256::ZERO; // Will extract actual value when parsing
+                let input_len = 0; // Will extract input data when parsing
+                
+                // Log transaction details for now
+                info!(
+                    block = %block_number,
+                    tx_index = %tx_index,
+                    tx_hash = ?tx_hash,
+                    from = ?sender,
+                    to = ?to,
+                    value = %value,
+                    input_len = %input_len,
+                    "Processing transaction"
+                );
+
+                // TODO: In next step, we'll parse transactions to identify:
+                // - ERC20 transfers (Transfer event)
+                // - Stablecoin contracts (USDT, USDC, DAI, etc.)
+                // - Mints and burns
+                // - Other relevant stablecoin operations
+            }
+        }
 
         Ok(())
     }

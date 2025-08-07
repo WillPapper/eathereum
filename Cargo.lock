@@ -9503,6 +9503,7 @@ dependencies = [
  "reth-node-api",
  "reth-node-ethereum",
  "reth-primitives",
+ "reth-primitives-traits",
  "reth-provider",
  "reth-tracing",
  "serde",
