@@ -31,3 +31,7 @@ exex/target/
 .env.test
 *.env
 !.env.example
+
+# Log files
+output*.log
+*.log
