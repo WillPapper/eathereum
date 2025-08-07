@@ -37,7 +37,9 @@ const stats = {
     USDC: 0,
     USDT: 0,
     DAI: 0,
-    currentPlants: 0  // Track current plant count
+    currentPlants: 0,  // Track current plant count
+    currentAnimals: 0, // Track current animal count
+    moneyCollected: 0  // Track money collected from eating animals
 };
 
 // Transaction plant class - represents a transaction as a growing plant
@@ -423,8 +425,325 @@ class TransactionPlant {
     }
 }
 
+// Transaction animal class - represents a transaction as a moving animal
+class TransactionAnimal {
+    constructor(stablecoin, amount, from, to) {
+        this.stablecoin = stablecoin;
+        this.amount = parseFloat(amount);
+        this.from = from;
+        this.to = to;
+        this.isAlive = true;
+        
+        // Animal size based on amount
+        const amountLog = Math.log10(this.amount + 1);
+        this.size = Math.min(Math.max(amountLog * 0.5 + 0.5, 0.5), 4); // 0.5-4 units
+        
+        // Create animal group
+        this.mesh = new THREE.Group();
+        
+        // Random spawn position
+        this.mesh.position.x = (Math.random() - 0.5) * 80;
+        this.mesh.position.y = -30 + this.size; // Start on ground
+        this.mesh.position.z = (Math.random() - 0.5) * 80;
+        
+        // Movement properties
+        this.velocity = new THREE.Vector3();
+        this.targetDirection = Math.random() * Math.PI * 2;
+        this.speed = 5 + Math.random() * 10; // Faster animals are harder to catch
+        this.turnSpeed = 0.05 + Math.random() * 0.05;
+        this.jumpCooldown = 0;
+        this.fleeRadius = 20; // Distance at which animal flees from bird
+        
+        // Get animal color based on stablecoin
+        this.baseColor = STABLECOIN_COLORS[stablecoin] || 0xFFFFFF;
+        
+        // Create animal based on amount
+        if (this.amount < 100) {
+            this.createSmallAnimal(); // Rabbit
+            this.animalType = 'rabbit';
+            this.speed *= 1.5; // Rabbits are fast
+        } else if (this.amount < 1000) {
+            this.createMediumAnimal(); // Fox
+            this.animalType = 'fox';
+        } else if (this.amount < 10000) {
+            this.createLargeAnimal(); // Deer
+            this.animalType = 'deer';
+            this.speed *= 0.8; // Deer are slightly slower
+        } else {
+            this.createGiantAnimal(); // Bear (whale transaction)
+            this.animalType = 'bear';
+            this.speed *= 0.5; // Bears are slow but valuable
+        }
+        
+        // Start with small scale for spawn animation
+        this.mesh.scale.set(0.01, 0.01, 0.01);
+        this.growthProgress = 0;
+        
+        this.age = 0;
+        this.createdAt = Date.now();
+    }
+    
+    createSmallAnimal() {
+        // Rabbit - small and quick
+        // Body
+        const bodyGeometry = new THREE.SphereGeometry(this.size * 0.8, 6, 4);
+        const bodyMaterial = new THREE.MeshLambertMaterial({ 
+            color: this.baseColor
+        });
+        const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        body.position.y = this.size * 0.5;
+        this.mesh.add(body);
+        
+        // Head
+        const headGeometry = new THREE.SphereGeometry(this.size * 0.5, 6, 4);
+        const head = new THREE.Mesh(headGeometry, bodyMaterial);
+        head.position.set(this.size * 0.6, this.size * 0.7, 0);
+        this.mesh.add(head);
+        
+        // Ears
+        for (let i = -1; i <= 1; i += 2) {
+            const earGeometry = new THREE.ConeGeometry(this.size * 0.2, this.size * 0.6, 4);
+            const ear = new THREE.Mesh(earGeometry, bodyMaterial);
+            ear.position.set(this.size * 0.6, this.size * 1.2, i * this.size * 0.2);
+            this.mesh.add(ear);
+        }
+        
+        // Tail (fluffy)
+        const tailGeometry = new THREE.SphereGeometry(this.size * 0.3, 4, 4);
+        const tailMaterial = new THREE.MeshLambertMaterial({ 
+            color: 0xFFFFFF
+        });
+        const tail = new THREE.Mesh(tailGeometry, tailMaterial);
+        tail.position.set(-this.size * 0.6, this.size * 0.5, 0);
+        this.mesh.add(tail);
+    }
+    
+    createMediumAnimal() {
+        // Fox - cunning and agile
+        // Body
+        const bodyGeometry = new THREE.BoxGeometry(this.size * 1.5, this.size * 0.8, this.size * 0.8);
+        const bodyMaterial = new THREE.MeshLambertMaterial({ 
+            color: this.baseColor
+        });
+        const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        body.position.y = this.size * 0.5;
+        this.mesh.add(body);
+        
+        // Head
+        const headGeometry = new THREE.ConeGeometry(this.size * 0.5, this.size * 0.8, 6);
+        const head = new THREE.Mesh(headGeometry, bodyMaterial);
+        head.rotation.z = Math.PI / 2;
+        head.position.set(this.size * 0.9, this.size * 0.6, 0);
+        this.mesh.add(head);
+        
+        // Tail (bushy)
+        const tailGeometry = new THREE.ConeGeometry(this.size * 0.4, this.size * 1.2, 6);
+        const tail = new THREE.Mesh(tailGeometry, bodyMaterial);
+        tail.rotation.z = -Math.PI / 3;
+        tail.position.set(-this.size * 0.9, this.size * 0.7, 0);
+        this.mesh.add(tail);
+        
+        // Legs
+        for (let x = -0.5; x <= 0.5; x += 1) {
+            for (let z = -0.3; z <= 0.3; z += 0.6) {
+                const legGeometry = new THREE.CylinderGeometry(this.size * 0.1, this.size * 0.1, this.size * 0.5);
+                const leg = new THREE.Mesh(legGeometry, bodyMaterial);
+                leg.position.set(x * this.size, this.size * 0.2, z * this.size);
+                this.mesh.add(leg);
+            }
+        }
+    }
+    
+    createLargeAnimal() {
+        // Deer - majestic and valuable
+        // Body
+        const bodyGeometry = new THREE.BoxGeometry(this.size * 2, this.size, this.size);
+        const bodyMaterial = new THREE.MeshLambertMaterial({ 
+            color: this.baseColor
+        });
+        const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        body.position.y = this.size * 0.8;
+        this.mesh.add(body);
+        
+        // Head
+        const headGeometry = new THREE.BoxGeometry(this.size * 0.6, this.size * 0.6, this.size * 0.5);
+        const head = new THREE.Mesh(headGeometry, bodyMaterial);
+        head.position.set(this.size * 1.2, this.size * 1, 0);
+        this.mesh.add(head);
+        
+        // Antlers (for high value)
+        if (this.amount > 5000) {
+            for (let side = -1; side <= 1; side += 2) {
+                const antlerGeometry = new THREE.ConeGeometry(this.size * 0.15, this.size * 0.8, 4);
+                const antlerMaterial = new THREE.MeshLambertMaterial({ 
+                    color: 0x8B4513
+                });
+                const antler = new THREE.Mesh(antlerGeometry, antlerMaterial);
+                antler.position.set(this.size * 1.2, this.size * 1.5, side * this.size * 0.3);
+                this.mesh.add(antler);
+            }
+        }
+        
+        // Legs (long)
+        for (let x = -0.6; x <= 0.6; x += 1.2) {
+            for (let z = -0.3; z <= 0.3; z += 0.6) {
+                const legGeometry = new THREE.CylinderGeometry(this.size * 0.12, this.size * 0.1, this.size * 0.8);
+                const leg = new THREE.Mesh(legGeometry, bodyMaterial);
+                leg.position.set(x * this.size, this.size * 0.3, z * this.size);
+                this.mesh.add(leg);
+            }
+        }
+    }
+    
+    createGiantAnimal() {
+        // Bear - whale transaction, slow but extremely valuable
+        // Body (massive)
+        const bodyGeometry = new THREE.SphereGeometry(this.size * 1.2, 8, 6);
+        const bodyMaterial = new THREE.MeshLambertMaterial({ 
+            color: this.baseColor
+        });
+        const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        body.position.y = this.size;
+        body.scale.set(1.3, 1, 1);
+        this.mesh.add(body);
+        
+        // Head
+        const headGeometry = new THREE.SphereGeometry(this.size * 0.6, 6, 4);
+        const head = new THREE.Mesh(headGeometry, bodyMaterial);
+        head.position.set(this.size * 1.2, this.size * 1.1, 0);
+        this.mesh.add(head);
+        
+        // Glowing aura for whale transactions
+        if (this.amount > 50000) {
+            const auraGeometry = new THREE.SphereGeometry(this.size * 2, 12, 8);
+            const auraMaterial = new THREE.MeshBasicMaterial({
+                color: this.baseColor,
+                transparent: true,
+                opacity: 0.2,
+                side: THREE.BackSide
+            });
+            this.aura = new THREE.Mesh(auraGeometry, auraMaterial);
+            this.aura.position.y = this.size;
+            this.mesh.add(this.aura);
+        }
+        
+        // Paws
+        for (let x = -0.6; x <= 0.6; x += 1.2) {
+            for (let z = -0.4; z <= 0.4; z += 0.8) {
+                const pawGeometry = new THREE.SphereGeometry(this.size * 0.3, 4, 4);
+                const paw = new THREE.Mesh(pawGeometry, bodyMaterial);
+                paw.position.set(x * this.size, this.size * 0.2, z * this.size);
+                this.mesh.add(paw);
+            }
+        }
+    }
+    
+    update() {
+        // Grow on spawn
+        if (this.growthProgress < 1) {
+            this.growthProgress = Math.min(this.growthProgress + 0.05, 1);
+            const scale = this.growthProgress;
+            this.mesh.scale.set(scale, scale, scale);
+        }
+        
+        if (!this.isAlive || isPaused) return true;
+        
+        // Check distance to bird for fleeing behavior
+        const distanceToBird = camera.position.distanceTo(this.mesh.position);
+        
+        // Flee if bird is close
+        if (birdControls.isFlying && distanceToBird < this.fleeRadius) {
+            // Calculate flee direction (away from bird)
+            const fleeDirection = new THREE.Vector3();
+            fleeDirection.subVectors(this.mesh.position, camera.position);
+            fleeDirection.y = 0; // Keep on ground plane
+            fleeDirection.normalize();
+            
+            this.targetDirection = Math.atan2(fleeDirection.x, fleeDirection.z);
+            this.speed = Math.min(this.speed * 1.5, 30); // Panic speed
+            
+            // Random jump when fleeing
+            if (this.jumpCooldown <= 0 && Math.random() < 0.1) {
+                this.velocity.y = 5 + Math.random() * 5;
+                this.jumpCooldown = 60;
+            }
+        } else {
+            // Wander randomly
+            this.targetDirection += (Math.random() - 0.5) * this.turnSpeed;
+            this.speed = 5 + Math.random() * 5;
+        }
+        
+        // Apply movement
+        this.velocity.x = Math.sin(this.targetDirection) * this.speed * 0.1;
+        this.velocity.z = Math.cos(this.targetDirection) * this.speed * 0.1;
+        
+        // Apply gravity
+        this.velocity.y -= 0.3;
+        
+        // Update position
+        this.mesh.position.add(this.velocity);
+        
+        // Ground collision
+        const groundLevel = -30 + this.size;
+        if (this.mesh.position.y < groundLevel) {
+            this.mesh.position.y = groundLevel;
+            this.velocity.y = 0;
+        }
+        
+        // Keep within bounds
+        const boundary = 90;
+        if (Math.abs(this.mesh.position.x) > boundary) {
+            this.mesh.position.x = Math.sign(this.mesh.position.x) * boundary;
+            this.targetDirection += Math.PI; // Turn around
+        }
+        if (Math.abs(this.mesh.position.z) > boundary) {
+            this.mesh.position.z = Math.sign(this.mesh.position.z) * boundary;
+            this.targetDirection += Math.PI; // Turn around
+        }
+        
+        // Face movement direction
+        this.mesh.rotation.y = -this.targetDirection;
+        
+        // Animate based on movement
+        const wobble = Math.sin(Date.now() * 0.01) * 0.1;
+        this.mesh.rotation.z = wobble * this.velocity.x * 0.1;
+        
+        // Update cooldowns
+        if (this.jumpCooldown > 0) this.jumpCooldown--;
+        
+        // Pulse aura for whale transactions
+        if (this.aura) {
+            this.aura.material.opacity = 0.2 + Math.sin(Date.now() * 0.003) * 0.1;
+        }
+        
+        this.age++;
+        return this.isAlive;
+    }
+    
+    // Called when eaten by bird
+    consume() {
+        this.isAlive = false;
+        // Return the value consumed
+        return this.amount;
+    }
+    
+    dispose() {
+        this.mesh.traverse((child) => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(mat => mat.dispose());
+                } else {
+                    child.material.dispose();
+                }
+            }
+        });
+    }
+}
+
 // Garden elements storage
 let gardenElements = [];
+let animals = []; // Track animals separately for collision detection
 
 // Initialize Three.js scene
 function init() {
@@ -669,33 +988,55 @@ function onWindowResize() {
     renderer.setSize(container.clientWidth, container.clientHeight);
 }
 
-// Add a new transaction plant
+// Add a new transaction - 95% animals, 5% plants
 function addTransaction(data) {
-    // Check if we've reached the plant cap
-    if (particles.length >= MAX_PLANTS) {
-        // Remove oldest plants to make room
-        removeOldestPlants(REMOVE_BATCH_SIZE);
+    // Check if we've reached the entity cap
+    const totalEntities = particles.length + animals.length;
+    if (totalEntities >= MAX_PLANTS) {
+        // Remove oldest entities to make room
+        if (animals.length > 0) {
+            removeOldestAnimals(Math.min(REMOVE_BATCH_SIZE, animals.length));
+        }
+        if (particles.length > 0 && totalEntities >= MAX_PLANTS) {
+            removeOldestPlants(Math.min(REMOVE_BATCH_SIZE / 2, particles.length));
+        }
     }
     
-    const plant = new TransactionPlant(
-        data.stablecoin,
-        data.amount,
-        data.from,
-        data.to
-    );
-    
-    particles.push(plant);
-    scene.add(plant.mesh);
+    // 5% chance for plant, 95% for animal
+    if (Math.random() < 0.05) {
+        // Create plant
+        const plant = new TransactionPlant(
+            data.stablecoin,
+            data.amount,
+            data.from,
+            data.to
+        );
+        
+        particles.push(plant);
+        scene.add(plant.mesh);
+        stats.currentPlants = particles.length;
+    } else {
+        // Create animal
+        const animal = new TransactionAnimal(
+            data.stablecoin,
+            data.amount,
+            data.from,
+            data.to
+        );
+        
+        animals.push(animal);
+        scene.add(animal.mesh);
+        stats.currentAnimals = animals.length;
+    }
     
     // Update statistics
     stats.total++;
     stats[data.stablecoin]++;
-    stats.currentPlants = particles.length;
     updateStats();
     
     // Log performance metrics periodically
     if (stats.total % 100 === 0) {
-        console.log(`Garden stats: ${particles.length} plants, ${renderer.info.render.triangles} triangles, ${renderer.info.memory.geometries} geometries`);
+        console.log(`Garden stats: ${particles.length} plants, ${animals.length} animals, ${renderer.info.render.triangles} triangles`);
     }
 }
 
@@ -714,22 +1055,44 @@ function removeOldestPlants(count) {
     console.log(`Removed ${plantsToRemove.length} oldest plants. Current count: ${particles.length}`);
 }
 
+// Remove the oldest animals from the garden
+function removeOldestAnimals(count) {
+    // Sort by creation time and remove the oldest
+    animals.sort((a, b) => a.createdAt - b.createdAt);
+    
+    const animalsToRemove = animals.splice(0, Math.min(count, animals.length));
+    
+    animalsToRemove.forEach(animal => {
+        scene.remove(animal.mesh);
+        animal.dispose();
+    });
+    
+    console.log(`Removed ${animalsToRemove.length} oldest animals. Current count: ${animals.length}`);
+}
+
 // Update statistics display
 function updateStats() {
-    document.getElementById('plant-count').textContent = stats.currentPlants;
+    document.getElementById('plant-count').textContent = `${stats.currentPlants} 🌳 / ${stats.currentAnimals} 🦊`;
     document.getElementById('total-transactions').textContent = stats.total;
     document.getElementById('usdc-count').textContent = stats.USDC;
     document.getElementById('usdt-count').textContent = stats.USDT;
     document.getElementById('dai-count').textContent = stats.DAI;
     
-    // Update the page title to show plant count
-    document.title = `Stablecoin Garden - ${stats.currentPlants} plants`;
+    // Show money collected if any
+    const moneyEl = document.getElementById('money-collected');
+    if (moneyEl) {
+        moneyEl.textContent = `$${stats.moneyCollected.toFixed(2)}`;
+    }
+    
+    // Update the page title
+    document.title = `Stablecoin Hunt - $${stats.moneyCollected.toFixed(2)} collected`;
     
     // Add warning color if approaching max capacity
+    const totalEntities = stats.currentPlants + stats.currentAnimals;
     const plantCountEl = document.getElementById('plant-count');
-    if (stats.currentPlants > MAX_PLANTS * 0.9) {
+    if (totalEntities > MAX_PLANTS * 0.9) {
         plantCountEl.style.color = '#ff6b6b';
-    } else if (stats.currentPlants > MAX_PLANTS * 0.75) {
+    } else if (totalEntities > MAX_PLANTS * 0.75) {
         plantCountEl.style.color = '#ffd93d';
     } else {
         plantCountEl.style.color = '#ffffff';
@@ -740,14 +1103,27 @@ function updateStats() {
 function animate() {
     requestAnimationFrame(animate);
     
-    // Update bird flight controls
+    // Update bird flight controls and check for collisions
     if (birdControls.isFlying) {
         updateBirdFlight();
+        checkBirdCollisions();
     }
     
     // Update plants (all plants are now persistent)
     particles.forEach(plant => {
         plant.update();
+    });
+    
+    // Update animals and remove dead ones
+    animals = animals.filter(animal => {
+        const alive = animal.update();
+        if (!alive) {
+            scene.remove(animal.mesh);
+            animal.dispose();
+            stats.currentAnimals--;
+            return false;
+        }
+        return true;
     });
     
     // Animate garden elements
@@ -774,6 +1150,79 @@ function animate() {
     }
     
     renderer.render(scene, camera);
+}
+
+// Check for bird-animal collisions
+function checkBirdCollisions() {
+    const birdPosition = camera.position;
+    const collisionRadius = 3; // Bird collision radius
+    
+    animals.forEach(animal => {
+        if (!animal.isAlive) return;
+        
+        const distance = birdPosition.distanceTo(animal.mesh.position);
+        
+        // Check if bird collides with animal
+        if (distance < collisionRadius + animal.size) {
+            // Consume the animal
+            const value = animal.consume();
+            stats.moneyCollected += value;
+            
+            // Visual feedback for eating
+            showEatEffect(animal.mesh.position, value, animal.stablecoin);
+            
+            // Update stats
+            updateStats();
+            
+            console.log(`Ate ${animal.animalType} worth $${value.toFixed(2)}! Total: $${stats.moneyCollected.toFixed(2)}`);
+        }
+    });
+}
+
+// Show visual effect when eating an animal
+function showEatEffect(position, value, stablecoin) {
+    // Create particle burst effect
+    const particleCount = Math.min(20, Math.floor(value / 100) + 5);
+    const color = STABLECOIN_COLORS[stablecoin] || 0xFFFFFF;
+    
+    for (let i = 0; i < particleCount; i++) {
+        const particle = new THREE.Mesh(
+            new THREE.SphereGeometry(0.3, 4, 4),
+            new THREE.MeshBasicMaterial({ 
+                color: color,
+                transparent: true,
+                opacity: 0.8
+            })
+        );
+        
+        particle.position.copy(position);
+        scene.add(particle);
+        
+        // Animate particle
+        const velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 2,
+            Math.random() * 3 + 2,
+            (Math.random() - 0.5) * 2
+        );
+        
+        const animateParticle = () => {
+            particle.position.add(velocity);
+            velocity.y -= 0.1;
+            particle.material.opacity -= 0.02;
+            
+            if (particle.material.opacity > 0) {
+                requestAnimationFrame(animateParticle);
+            } else {
+                scene.remove(particle);
+                particle.geometry.dispose();
+                particle.material.dispose();
+            }
+        };
+        
+        animateParticle();
+    }
+    
+    // Show value text (optional - could add floating text here)
 }
 
 // Update bird flight physics
@@ -948,23 +1397,32 @@ function disconnectWebSocket() {
     statusEl.className = 'disconnected';
 }
 
-// Clear all plants
+// Clear all entities (plants and animals)
 function clearParticles() {
+    // Clear plants
     particles.forEach(plant => {
         scene.remove(plant.mesh);
         plant.dispose();
     });
     particles = [];
     
-    // Reset stats
+    // Clear animals
+    animals.forEach(animal => {
+        scene.remove(animal.mesh);
+        animal.dispose();
+    });
+    animals = [];
+    
+    // Reset stats (but keep money collected)
     stats.total = 0;
     stats.USDC = 0;
     stats.USDT = 0;
     stats.DAI = 0;
     stats.currentPlants = 0;
+    stats.currentAnimals = 0;
     updateStats();
     
-    console.log('Garden cleared');
+    console.log('Garden cleared - Money collected preserved: $' + stats.moneyCollected.toFixed(2));
 }
 
 // Setup event listeners
