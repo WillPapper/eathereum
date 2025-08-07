@@ -19,180 +19,362 @@ const stats = {
     DAI: 0
 };
 
-// Transaction particle class
-class TransactionParticle {
+// Transaction plant class - represents a transaction as a growing plant
+class TransactionPlant {
     constructor(stablecoin, amount, from, to) {
         this.stablecoin = stablecoin;
         this.amount = parseFloat(amount);
         this.from = from;
         this.to = to;
         
-        // Calculate size based on amount (logarithmic scale for better visualization)
-        // Small transfers: 0.2-0.5, Medium: 0.5-1.5, Large: 1.5-3.0
+        // Calculate final size based on amount (logarithmic scale)
         const amountLog = Math.log10(this.amount + 1);
-        const size = Math.min(Math.max(amountLog * 0.3 + 0.2, 0.2), 3.0);
+        this.targetHeight = Math.min(Math.max(amountLog * 5 + 2, 2), 30); // Height: 2-30 units
+        this.stemWidth = Math.min(Math.max(amountLog * 0.3 + 0.1, 0.1), 2); // Width: 0.1-2 units
         
-        // Determine detail level based on amount
-        const segments = this.amount > 10000 ? 16 : (this.amount > 1000 ? 12 : 8);
+        // Create plant group
+        this.mesh = new THREE.Group();
         
-        // Create main sphere geometry
-        const geometry = new THREE.SphereGeometry(size, segments, segments);
-        
-        // Material changes based on amount
-        const baseColor = STABLECOIN_COLORS[stablecoin] || 0xFFFFFF;
-        
-        // For large amounts, use emissive material for glow effect
-        const material = this.amount > 5000 ? 
-            new THREE.MeshPhongMaterial({
-                color: baseColor,
-                emissive: baseColor,
-                emissiveIntensity: Math.min(this.amount / 50000, 0.5),
-                transparent: true,
-                opacity: 0.9,
-                shininess: 100
-            }) :
-            new THREE.MeshLambertMaterial({
-                color: baseColor,
-                transparent: true,
-                opacity: Math.min(0.5 + amountLog * 0.1, 0.95)
-            });
-        
-        this.mesh = new THREE.Mesh(geometry, material);
-        
-        // Add glow effect for very large transfers (>10000)
-        if (this.amount > 10000) {
-            this.createGlowEffect(baseColor, size);
-        }
-        
-        // Add ring for massive transfers (>50000)
-        if (this.amount > 50000) {
-            this.createRing(baseColor, size);
-        }
-        
-        // Position based on amount (larger amounts start higher)
-        // Particles appear above the garden
+        // Random position in garden
         this.mesh.position.x = (Math.random() - 0.5) * 80;
-        this.mesh.position.y = 50 + (amountLog * 5); // Higher start for larger amounts
+        this.mesh.position.y = -30; // Start at ground level
         this.mesh.position.z = (Math.random() - 0.5) * 80;
         
-        // Velocity affected by size (larger = slower fall)
-        const massFactor = 1 / (1 + size * 0.3);
-        this.velocity = {
-            x: (Math.random() - 0.5) * 0.5 * massFactor,
-            y: -(Math.random() * 0.3 + 0.4) * massFactor,
-            z: (Math.random() - 0.5) * 0.5 * massFactor
-        };
+        // Get plant color based on stablecoin
+        this.baseColor = STABLECOIN_COLORS[stablecoin] || 0xFFFFFF;
         
-        // Rotation for visual interest (faster for smaller amounts)
-        this.rotation = {
-            x: (Math.random() - 0.5) * 0.02 / size,
-            y: (Math.random() - 0.5) * 0.02 / size,
-            z: (Math.random() - 0.5) * 0.02 / size
-        };
+        // Growth parameters
+        this.growthProgress = 0;
+        this.growthSpeed = 0.02 + Math.random() * 0.01; // Vary growth speed slightly
+        this.swayPhase = Math.random() * Math.PI * 2;
+        
+        // Create plant based on amount
+        if (this.amount < 1000) {
+            this.createSmallPlant(); // Small flower
+        } else if (this.amount < 10000) {
+            this.createMediumPlant(); // Medium bush/flower
+        } else if (this.amount < 50000) {
+            this.createLargePlant(); // Large flowering plant
+        } else {
+            this.createGiantPlant(); // Majestic tree
+        }
+        
+        // Start small (will grow)
+        this.mesh.scale.set(0.01, 0.01, 0.01);
         
         this.age = 0;
-        this.maxAge = 300 + (amountLog * 50); // Larger amounts last longer
-        this.size = size;
-        this.pulsePhase = Math.random() * Math.PI * 2;
+        this.maxAge = 400 + (amountLog * 100); // Larger amounts last longer
+        this.isFullyGrown = false;
     }
     
-    createGlowEffect(color, size) {
-        // Create outer glow sphere
-        const glowGeometry = new THREE.SphereGeometry(size * 1.5, 8, 8);
-        const glowMaterial = new THREE.MeshBasicMaterial({
-            color: color,
-            transparent: true,
-            opacity: 0.2,
-            side: THREE.BackSide
+    createSmallPlant() {
+        // Small flower with stem
+        this.plantType = 'flower';
+        
+        // Stem
+        const stemGeometry = new THREE.CylinderGeometry(
+            this.stemWidth * 0.5, 
+            this.stemWidth, 
+            this.targetHeight
+        );
+        const stemMaterial = new THREE.MeshLambertMaterial({ 
+            color: 0x2D5016 // Dark green stem
         });
-        this.glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
-        this.mesh.add(this.glowMesh);
+        this.stem = new THREE.Mesh(stemGeometry, stemMaterial);
+        this.stem.position.y = this.targetHeight / 2;
+        this.stem.castShadow = true;
+        this.mesh.add(this.stem);
+        
+        // Flower petals (multiple small spheres)
+        const petalCount = 5 + Math.floor(Math.random() * 3);
+        this.petals = [];
+        for (let i = 0; i < petalCount; i++) {
+            const angle = (i / petalCount) * Math.PI * 2;
+            const petalGeometry = new THREE.SphereGeometry(this.stemWidth * 2, 6, 4);
+            const petalMaterial = new THREE.MeshPhongMaterial({
+                color: this.baseColor,
+                emissive: this.baseColor,
+                emissiveIntensity: 0.2
+            });
+            const petal = new THREE.Mesh(petalGeometry, petalMaterial);
+            petal.position.set(
+                Math.cos(angle) * this.stemWidth * 3,
+                this.targetHeight,
+                Math.sin(angle) * this.stemWidth * 3
+            );
+            petal.scale.set(1, 0.6, 1);
+            this.petals.push(petal);
+            this.mesh.add(petal);
+        }
+        
+        // Center of flower
+        const centerGeometry = new THREE.SphereGeometry(this.stemWidth * 1.5, 8, 6);
+        const centerMaterial = new THREE.MeshLambertMaterial({
+            color: 0xFFFF00 // Yellow center
+        });
+        this.center = new THREE.Mesh(centerGeometry, centerMaterial);
+        this.center.position.y = this.targetHeight;
+        this.mesh.add(this.center);
     }
     
-    createRing(color, size) {
-        // Create a ring around massive transfers
-        const ringGeometry = new THREE.TorusGeometry(size * 2, size * 0.1, 4, 16);
-        const ringMaterial = new THREE.MeshBasicMaterial({
-            color: color,
-            transparent: true,
-            opacity: 0.6
+    createMediumPlant() {
+        // Medium flowering bush
+        this.plantType = 'bush';
+        
+        // Main bush body (multiple spheres)
+        const bushParts = 3 + Math.floor(Math.random() * 2);
+        this.bushes = [];
+        for (let i = 0; i < bushParts; i++) {
+            const bushGeometry = new THREE.SphereGeometry(
+                this.targetHeight / 3 + Math.random() * 2, 
+                8, 
+                6
+            );
+            const bushMaterial = new THREE.MeshLambertMaterial({
+                color: 0x2F4F2F // Dark green
+            });
+            const bush = new THREE.Mesh(bushGeometry, bushMaterial);
+            bush.position.set(
+                (Math.random() - 0.5) * this.targetHeight / 3,
+                this.targetHeight / 3 + i * 2,
+                (Math.random() - 0.5) * this.targetHeight / 3
+            );
+            bush.castShadow = true;
+            this.bushes.push(bush);
+            this.mesh.add(bush);
+        }
+        
+        // Add flowers on bush
+        const flowerCount = 5 + Math.floor(this.amount / 2000);
+        this.flowers = [];
+        for (let i = 0; i < flowerCount; i++) {
+            const flowerGeometry = new THREE.SphereGeometry(0.8, 6, 4);
+            const flowerMaterial = new THREE.MeshPhongMaterial({
+                color: this.baseColor,
+                emissive: this.baseColor,
+                emissiveIntensity: 0.3
+            });
+            const flower = new THREE.Mesh(flowerGeometry, flowerMaterial);
+            const angle = Math.random() * Math.PI * 2;
+            const radius = this.targetHeight / 3 + Math.random() * 2;
+            flower.position.set(
+                Math.cos(angle) * radius,
+                this.targetHeight / 2 + Math.random() * this.targetHeight / 2,
+                Math.sin(angle) * radius
+            );
+            this.flowers.push(flower);
+            this.mesh.add(flower);
+        }
+    }
+    
+    createLargePlant() {
+        // Large ornamental plant with trunk and flowers
+        this.plantType = 'ornamental';
+        
+        // Trunk
+        const trunkGeometry = new THREE.CylinderGeometry(
+            this.stemWidth * 2,
+            this.stemWidth * 3,
+            this.targetHeight * 0.6
+        );
+        const trunkMaterial = new THREE.MeshLambertMaterial({
+            color: 0x4A3C28 // Brown trunk
         });
-        this.ring = new THREE.Mesh(ringGeometry, ringMaterial);
-        this.ring.rotation.x = Math.PI / 2;
-        this.mesh.add(this.ring);
+        this.trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        this.trunk.position.y = this.targetHeight * 0.3;
+        this.trunk.castShadow = true;
+        this.mesh.add(this.trunk);
+        
+        // Foliage layers
+        const layers = 3;
+        this.foliage = [];
+        for (let i = 0; i < layers; i++) {
+            const layerGeometry = new THREE.ConeGeometry(
+                this.targetHeight / 2.5 - i * 2,
+                this.targetHeight / 4,
+                8
+            );
+            const layerMaterial = new THREE.MeshLambertMaterial({
+                color: 0x228B22
+            });
+            const layer = new THREE.Mesh(layerGeometry, layerMaterial);
+            layer.position.y = this.targetHeight * 0.5 + i * this.targetHeight / 6;
+            layer.castShadow = true;
+            this.foliage.push(layer);
+            this.mesh.add(layer);
+        }
+        
+        // Large flowers
+        const flowerCount = Math.floor(this.amount / 5000);
+        this.flowers = [];
+        for (let i = 0; i < flowerCount; i++) {
+            const flowerGeometry = new THREE.SphereGeometry(1.5, 8, 6);
+            const flowerMaterial = new THREE.MeshPhongMaterial({
+                color: this.baseColor,
+                emissive: this.baseColor,
+                emissiveIntensity: 0.4
+            });
+            const flower = new THREE.Mesh(flowerGeometry, flowerMaterial);
+            const angle = (i / flowerCount) * Math.PI * 2;
+            flower.position.set(
+                Math.cos(angle) * this.targetHeight / 3,
+                this.targetHeight * 0.7 + Math.random() * this.targetHeight * 0.2,
+                Math.sin(angle) * this.targetHeight / 3
+            );
+            this.flowers.push(flower);
+            this.mesh.add(flower);
+        }
+    }
+    
+    createGiantPlant() {
+        // Majestic tree for whale transactions
+        this.plantType = 'tree';
+        
+        // Thick trunk
+        const trunkGeometry = new THREE.CylinderGeometry(
+            this.stemWidth * 3,
+            this.stemWidth * 4,
+            this.targetHeight * 0.5
+        );
+        const trunkMaterial = new THREE.MeshLambertMaterial({
+            color: 0x654321
+        });
+        this.trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        this.trunk.position.y = this.targetHeight * 0.25;
+        this.trunk.castShadow = true;
+        this.mesh.add(this.trunk);
+        
+        // Crown (multiple large spheres)
+        const crownParts = 5;
+        this.crown = [];
+        for (let i = 0; i < crownParts; i++) {
+            const crownGeometry = new THREE.SphereGeometry(
+                this.targetHeight / 3 + Math.random() * 3,
+                12,
+                8
+            );
+            const crownMaterial = new THREE.MeshLambertMaterial({
+                color: 0x0F7938
+            });
+            const crownPart = new THREE.Mesh(crownGeometry, crownMaterial);
+            const angle = (i / crownParts) * Math.PI * 2;
+            crownPart.position.set(
+                Math.cos(angle) * this.targetHeight / 6,
+                this.targetHeight * 0.6 + Math.random() * this.targetHeight * 0.2,
+                Math.sin(angle) * this.targetHeight / 6
+            );
+            crownPart.castShadow = true;
+            this.crown.push(crownPart);
+            this.mesh.add(crownPart);
+        }
+        
+        // Glowing fruits for massive transactions
+        const fruitCount = Math.floor(this.amount / 20000);
+        this.fruits = [];
+        for (let i = 0; i < fruitCount; i++) {
+            const fruitGeometry = new THREE.SphereGeometry(1, 8, 6);
+            const fruitMaterial = new THREE.MeshPhongMaterial({
+                color: this.baseColor,
+                emissive: this.baseColor,
+                emissiveIntensity: 0.6
+            });
+            const fruit = new THREE.Mesh(fruitGeometry, fruitMaterial);
+            const angle = Math.random() * Math.PI * 2;
+            const height = this.targetHeight * 0.5 + Math.random() * this.targetHeight * 0.3;
+            const radius = Math.random() * this.targetHeight / 3;
+            fruit.position.set(
+                Math.cos(angle) * radius,
+                height,
+                Math.sin(angle) * radius
+            );
+            this.fruits.push(fruit);
+            this.mesh.add(fruit);
+        }
+        
+        // Add aura for whale transactions
+        if (this.amount > 100000) {
+            const auraGeometry = new THREE.SphereGeometry(this.targetHeight * 0.8, 16, 12);
+            const auraMaterial = new THREE.MeshBasicMaterial({
+                color: this.baseColor,
+                transparent: true,
+                opacity: 0.1,
+                side: THREE.BackSide
+            });
+            this.aura = new THREE.Mesh(auraGeometry, auraMaterial);
+            this.aura.position.y = this.targetHeight * 0.6;
+            this.mesh.add(this.aura);
+        }
     }
     
     update() {
         if (isPaused) return;
         
-        // Update position
-        this.mesh.position.x += this.velocity.x;
-        this.mesh.position.y += this.velocity.y;
-        this.mesh.position.z += this.velocity.z;
-        
-        // Apply rotation
-        this.mesh.rotation.x += this.rotation.x;
-        this.mesh.rotation.y += this.rotation.y;
-        this.mesh.rotation.z += this.rotation.z;
-        
-        // Apply gravity (less for larger amounts) - gentle like falling through air
-        this.velocity.y -= 0.008 * (1 / (1 + this.size * 0.2));
-        
-        // Add slight wind effect
-        this.velocity.x += Math.sin(this.age * 0.02) * 0.002;
-        this.velocity.z += Math.cos(this.age * 0.015) * 0.002;
-        
-        // Land on grass (ground at y = -30)
-        const groundLevel = -30 + this.size;
-        if (this.mesh.position.y < groundLevel) {
-            this.mesh.position.y = groundLevel;
+        // Grow the plant
+        if (this.growthProgress < 1) {
+            this.growthProgress = Math.min(this.growthProgress + this.growthSpeed, 1);
             
-            // Gentle bounce on grass
-            this.velocity.y *= -0.3 * (1 / (1 + this.size * 0.1));
+            // Smooth growth curve (ease-out)
+            const growthCurve = 1 - Math.pow(1 - this.growthProgress, 3);
+            this.mesh.scale.set(growthCurve, growthCurve, growthCurve);
             
-            // Add some lateral movement on bounce for variety
-            this.velocity.x += (Math.random() - 0.5) * 0.05;
-            this.velocity.z += (Math.random() - 0.5) * 0.05;
-            
-            // Friction on ground
-            this.velocity.x *= 0.95;
-            this.velocity.z *= 0.95;
-            
-            // Small particles can "settle" into grass
-            if (this.size < 0.5 && Math.abs(this.velocity.y) < 0.1) {
-                this.velocity.y = 0;
-                this.mesh.position.y = groundLevel - this.size * 0.3;
+            // Mark as fully grown
+            if (this.growthProgress >= 1) {
+                this.isFullyGrown = true;
             }
         }
         
-        // Pulse effect for large amounts
-        if (this.amount > 5000) {
-            const pulseScale = 1 + Math.sin(this.age * 0.05 + this.pulsePhase) * 0.05;
-            this.mesh.scale.set(pulseScale, pulseScale, pulseScale);
-            
-            // Rotate ring if it exists
-            if (this.ring) {
-                this.ring.rotation.z += 0.02;
-            }
-        }
+        // Sway animation (wind effect)
+        const swayAmount = this.isFullyGrown ? 0.03 : 0.01;
+        const time = Date.now() * 0.001;
+        this.mesh.rotation.z = Math.sin(time + this.swayPhase) * swayAmount;
+        this.mesh.rotation.x = Math.cos(time * 0.7 + this.swayPhase) * swayAmount * 0.5;
         
-        // Update glow intensity based on age
-        if (this.glowMesh) {
-            const glowIntensity = 0.2 * (1 - this.age / this.maxAge);
-            this.glowMesh.material.opacity = glowIntensity;
+        // Animate specific plant parts
+        if (this.plantType === 'flower' && this.petals) {
+            // Petals open and close slightly
+            this.petals.forEach((petal, i) => {
+                const petalPhase = i * 0.5;
+                petal.scale.y = 0.6 + Math.sin(time * 0.5 + petalPhase) * 0.1;
+            });
+        } else if (this.plantType === 'tree' && this.fruits) {
+            // Fruits bob slightly
+            this.fruits.forEach((fruit, i) => {
+                fruit.position.y += Math.sin(time * 2 + i) * 0.01;
+            });
+            
+            // Pulse aura for whale transactions
+            if (this.aura) {
+                this.aura.material.opacity = 0.1 + Math.sin(time * 3) * 0.05;
+                this.aura.scale.set(
+                    1 + Math.sin(time * 2) * 0.1,
+                    1 + Math.sin(time * 2) * 0.1,
+                    1 + Math.sin(time * 2) * 0.1
+                );
+            }
+        } else if (this.flowers) {
+            // Flowers on bushes/ornamental plants glow pulse
+            this.flowers.forEach((flower, i) => {
+                if (flower.material.emissiveIntensity !== undefined) {
+                    flower.material.emissiveIntensity = 0.3 + Math.sin(time * 2 + i * 0.5) * 0.2;
+                }
+            });
         }
         
         // Age and fade
         this.age++;
-        const fadeStart = this.maxAge * 0.7;
+        const fadeStart = this.maxAge * 0.8;
         if (this.age > fadeStart) {
-            const fadeProgress = (this.age - fadeStart) / (this.maxAge * 0.3);
-            const targetOpacity = this.amount > 5000 ? 0.9 : (0.5 + Math.log10(this.amount + 1) * 0.1);
-            this.mesh.material.opacity = targetOpacity * (1 - fadeProgress);
+            const fadeProgress = (this.age - fadeStart) / (this.maxAge * 0.2);
             
-            if (this.ring) {
-                this.ring.material.opacity = 0.6 * (1 - fadeProgress);
-            }
+            // Fade all materials in the plant
+            this.mesh.traverse((child) => {
+                if (child.material) {
+                    if (child.material.opacity !== undefined) {
+                        child.material.transparent = true;
+                        child.material.opacity = Math.max(0, 1 - fadeProgress);
+                    }
+                }
+            });
         }
         
         return this.age < this.maxAge;
@@ -445,22 +627,25 @@ function onWindowResize() {
     renderer.setSize(container.clientWidth, container.clientHeight);
 }
 
-// Add a new transaction particle
+// Add a new transaction plant
 function addTransaction(data) {
-    const particle = new TransactionParticle(
+    const plant = new TransactionPlant(
         data.stablecoin,
         data.amount,
         data.from,
         data.to
     );
     
-    particles.push(particle);
-    scene.add(particle.mesh);
+    particles.push(plant);
+    scene.add(plant.mesh);
     
     // Update statistics
     stats.total++;
     stats[data.stablecoin]++;
     updateStats();
+    
+    // Play a sprouting sound effect (optional)
+    // You could add sound effects here if desired
 }
 
 // Update statistics display
@@ -475,23 +660,25 @@ function updateStats() {
 function animate() {
     requestAnimationFrame(animate);
     
-    // Update particles
-    particles = particles.filter(particle => {
-        const alive = particle.update();
+    // Update plants
+    particles = particles.filter(plant => {
+        const alive = plant.update();
         if (!alive) {
-            scene.remove(particle.mesh);
-            particle.mesh.geometry.dispose();
-            particle.mesh.material.dispose();
+            scene.remove(plant.mesh);
             
-            // Clean up additional meshes
-            if (particle.glowMesh) {
-                particle.glowMesh.geometry.dispose();
-                particle.glowMesh.material.dispose();
-            }
-            if (particle.ring) {
-                particle.ring.geometry.dispose();
-                particle.ring.material.dispose();
-            }
+            // Dispose of all geometries and materials in the plant
+            plant.mesh.traverse((child) => {
+                if (child.geometry) {
+                    child.geometry.dispose();
+                }
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(mat => mat.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
         }
         return alive;
     });
@@ -616,22 +803,24 @@ function disconnectWebSocket() {
     statusEl.className = 'disconnected';
 }
 
-// Clear all particles
+// Clear all plants
 function clearParticles() {
-    particles.forEach(particle => {
-        scene.remove(particle.mesh);
-        particle.mesh.geometry.dispose();
-        particle.mesh.material.dispose();
+    particles.forEach(plant => {
+        scene.remove(plant.mesh);
         
-        // Clean up additional meshes
-        if (particle.glowMesh) {
-            particle.glowMesh.geometry.dispose();
-            particle.glowMesh.material.dispose();
-        }
-        if (particle.ring) {
-            particle.ring.geometry.dispose();
-            particle.ring.material.dispose();
-        }
+        // Dispose of all geometries and materials in the plant
+        plant.mesh.traverse((child) => {
+            if (child.geometry) {
+                child.geometry.dispose();
+            }
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(mat => mat.dispose());
+                } else {
+                    child.material.dispose();
+                }
+            }
+        });
     });
     particles = [];
     
