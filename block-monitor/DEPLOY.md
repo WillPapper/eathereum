@@ -17,7 +17,7 @@
 4. **Configure Environment**:
    - Go to your service dashboard
    - Click "Environment"
-   - Add `ALCHEMY_RPC_URL` with your Base network API key
+   - Add `RPC_URL` with your Base network RPC endpoint
    - Save changes
 
 5. **Auto-Deploy is Active** ✅
@@ -79,7 +79,7 @@ If a deployment fails:
 
 ## Deployment Checklist
 
-- [ ] Alchemy API key is set for Base network
+- [ ] RPC_URL is set for Base network
 - [ ] GitHub repository is connected
 - [ ] Auto-deploy is enabled in render.yaml
 - [ ] Environment variables are configured
@@ -89,7 +89,7 @@ If a deployment fails:
 ## Troubleshooting
 
 ### Service Not Starting
-- Check `ALCHEMY_RPC_URL` is set correctly
+- Check `RPC_URL` is set correctly
 - Verify it's a Base network endpoint, not Ethereum
 - Check logs for specific error messages
 

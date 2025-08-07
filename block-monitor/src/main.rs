@@ -336,12 +336,13 @@ async fn main() -> Result<()> {
     
     // Get RPC URL from environment or use default
     // MUST be a Base network RPC endpoint (not Ethereum mainnet)
-    let rpc_url = env::var("ALCHEMY_RPC_URL")
-        .unwrap_or_else(|_| "https://base-mainnet.g.alchemy.com/v2/YOUR_API_KEY".to_string());
+    let rpc_url = env::var("RPC_URL")
+        .or_else(|_| env::var("ALCHEMY_RPC_URL")) // Fallback for backward compatibility
+        .unwrap_or_else(|_| "https://mainnet.base.org".to_string());
     
-    if rpc_url.contains("YOUR_API_KEY") {
-        error!("Please set ALCHEMY_RPC_URL environment variable with your Alchemy API key");
-        error!("Get your Base network API key from: https://www.alchemy.com/");
+    if rpc_url.contains("YOUR_API_KEY") || rpc_url.contains("YOUR_PROJECT_ID") || rpc_url.contains("YOUR_KEY") {
+        error!("Please set RPC_URL environment variable with your Base network RPC endpoint");
+        error!("You can use providers like Alchemy, Infura, QuickNode, or the public Base RPC");
         std::process::exit(1);
     }
     

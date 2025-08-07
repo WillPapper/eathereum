@@ -4,7 +4,7 @@ A Rust-based blockchain monitor that tracks stablecoin transactions (USDC, USDT,
 
 ## Features
 
-- Polls Alchemy RPC every 2 seconds for new blocks
+- Polls RPC endpoint every 2 seconds for new blocks
 - Parses ERC-20 transfer and transferFrom transactions
 - Broadcasts transaction data via WebSocket to connected clients
 - Supports multiple concurrent WebSocket connections
@@ -26,7 +26,7 @@ Source: [Base Official Documentation](https://docs.base.org/)
 1. **Setup Environment**
    ```bash
    cp .env.example .env
-   # Edit .env and add your Alchemy API key
+   # Edit .env and add your RPC URL
    ```
 
 2. **Build and Run**
@@ -59,7 +59,7 @@ The server runs as a continuous background worker that polls every 2 seconds:
      - **Dockerfile Path**: `./Dockerfile`
 
 3. **Set Environment Variables**
-   - `ALCHEMY_RPC_URL`: Your Alchemy Base network API URL with key
+   - `RPC_URL`: Your Base network RPC endpoint (Alchemy, Infura, QuickNode, etc.)
    - `PORT`: 8080 (WebSocket port)
    - `HEALTH_PORT`: 8081 (Health check port)
    - `RUST_LOG`: info
@@ -104,7 +104,9 @@ Deploy directly using the provided configuration with auto-deploy enabled:
 
 ## Environment Variables
 
-- `ALCHEMY_RPC_URL`: Alchemy RPC endpoint with API key (required)
+- `RPC_URL`: Base network RPC endpoint (required)
+  - Supports any provider: Alchemy, Infura, QuickNode, etc.
+  - Example: `https://base-mainnet.g.alchemy.com/v2/YOUR_KEY`
 - `PORT`: WebSocket server port (default: 8080)
 - `HEALTH_PORT`: Health check server port (default: 8081)
 - `RUST_LOG`: Log level (default: info)
@@ -113,8 +115,8 @@ Deploy directly using the provided configuration with auto-deploy enabled:
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│   Alchemy   │────▶│    Server    │────▶│  WebSocket   │
-│     RPC     │     │   (Polling)  │     │   Clients    │
+│   RPC Node  │────▶│    Server    │────▶│  WebSocket   │
+│   Provider  │     │   (Polling)  │     │   Clients    │
 └─────────────┘     └──────────────┘     └──────────────┘
       ▲                    │                     │
       │                    ▼                     ▼
