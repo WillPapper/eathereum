@@ -35,3 +35,5 @@ exex/target/
 # Log files
 output*.log
 *.log
+
+.DS_Store
