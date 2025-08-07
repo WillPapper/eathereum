@@ -1,6 +1,6 @@
 use alloy_consensus::{EthereumTxEnvelope, Transaction};
 use alloy_eips::eip2718::Typed2718;
-use alloy_primitives::{Address, BlockNumber, U256, Bytes};
+use alloy_primitives::{address, Address, BlockNumber, U256, Bytes};
 use clap::{Args, Parser};
 use eyre::OptionExt;
 use futures::{FutureExt, StreamExt};
@@ -16,7 +16,63 @@ use reth_exex::{BackfillJobFactory, ExExContext, ExExEvent, ExExNotification};
 use reth_node_api::FullNodeComponents;
 use reth_node_ethereum::EthereumNode;
 use reth_tracing::tracing::{error, info};
-use std::ops::RangeInclusive;
+use std::{collections::HashMap, ops::RangeInclusive};
+use once_cell::sync::Lazy;
+
+/// Known stablecoin addresses on Ethereum mainnet
+static STABLECOIN_ADDRESSES: Lazy<HashMap<Address, StablecoinInfo>> = Lazy::new(|| {
+    HashMap::from([
+        (
+            address!("dac17f958d2ee523a2206206994597c13d831ec7"),
+            StablecoinInfo { name: "USDT", decimals: 6 },
+        ),
+        (
+            address!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+            StablecoinInfo { name: "USDC", decimals: 6 },
+        ),
+        (
+            address!("6b175474e89094c44da98b954eedeac495271d0f"),
+            StablecoinInfo { name: "DAI", decimals: 18 },
+        ),
+    ])
+});
+
+/// ERC-20 function selectors
+mod selectors {
+    pub const TRANSFER: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
+    pub const TRANSFER_FROM: [u8; 4] = [0x23, 0xb8, 0x72, 0xdd];
+    pub const APPROVE: [u8; 4] = [0x09, 0x5e, 0xa7, 0xb3];
+    pub const BALANCE_OF: [u8; 4] = [0x70, 0xa0, 0x82, 0x31];
+    pub const TOTAL_SUPPLY: [u8; 4] = [0x18, 0x16, 0x0d, 0xdd];
+}
+
+/// A newtype wrapper for function selectors for better type safety
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FunctionSelector([u8; 4]);
+
+impl FunctionSelector {
+    const TRANSFER: Self = Self(selectors::TRANSFER);
+    const TRANSFER_FROM: Self = Self(selectors::TRANSFER_FROM);
+    
+    /// Extract function selector from input bytes
+    fn from_input(input: &Bytes) -> Option<Self> {
+        input.get(0..4)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(Self)
+    }
+    
+    /// Check if input starts with this selector
+    fn matches(&self, input: &Bytes) -> bool {
+        input.starts_with(&self.0)
+    }
+}
+
+/// Stablecoin metadata
+#[derive(Debug, Clone, Copy)]
+struct StablecoinInfo {
+    name: &'static str,
+    decimals: u8,
+}
 
 /// The ExEx that processes blockchain data for stablecoin visualization
 struct StablecoinVisualizerExEx<Node: FullNodeComponents> {
@@ -27,7 +83,7 @@ struct StablecoinVisualizerExEx<Node: FullNodeComponents> {
 }
 
 /// ERC-20 Transfer event data
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Erc20Transfer {
     from: Address,
     to: Address,
@@ -36,25 +92,42 @@ struct Erc20Transfer {
 }
 
 /// Format token amount with proper decimals
-fn format_token_amount(amount: U256, token_name: &str) -> String {
-    // Most stablecoins use different decimals
-    let decimals = match token_name {
-        "USDT" => 6,  // Tether uses 6 decimals
-        "USDC" => 6,  // USD Coin uses 6 decimals
-        "DAI" => 18,  // DAI uses 18 decimals
-        _ => 18,
-    };
-    
+fn format_token_amount(amount: U256, decimals: u8) -> String {
     // Convert to decimal representation
     let divisor = U256::from(10).pow(U256::from(decimals));
     let whole = amount / divisor;
     let fraction = amount % divisor;
     
-    // Format with decimals
-    if decimals == 6 {
-        format!("{}.{:06}", whole, fraction)
-    } else {
-        format!("{}.{:018}", whole, fraction)
+    // Format with appropriate decimal places
+    match decimals {
+        6 => format!("{}.{:06}", whole, fraction),
+        18 => format!("{}.{:018}", whole, fraction),
+        n => {
+            // Handle arbitrary decimal places
+            let fraction_str = format!("{:0width$}", fraction, width = n as usize);
+            format!("{}.{}", whole, fraction_str)
+        }
+    }
+}
+
+/// Extract transaction data from any transaction envelope variant
+fn extract_tx_data(envelope: &EthereumTxEnvelope) -> (Option<Address>, U256, &Bytes) {
+    use EthereumTxEnvelope::*;
+    
+    match envelope {
+        Legacy(tx) | Eip2930(tx) => {
+            let inner = tx.tx();
+            (inner.to(), inner.value(), inner.input())
+        }
+        Eip1559(tx) => {
+            let inner = tx.tx();
+            (inner.to(), inner.value(), inner.input())
+        }
+        Eip4844(tx) => {
+            let inner = tx.tx();
+            (inner.to(), inner.value(), inner.input())
+        }
+        _ => (None, U256::ZERO, &Bytes::new()),
     }
 }
 
@@ -75,73 +148,109 @@ where
     /// Parse ERC-20 transfer function call from input data
     /// transfer(address,uint256) - 0xa9059cbb
     fn parse_erc20_transfer(input: &Bytes, from: Address, token: Address) -> Option<Erc20Transfer> {
-        // ERC-20 transfer function selector
-        const TRANSFER_SELECTOR: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
-        
-        // Check if input is long enough and starts with transfer selector
-        if input.len() >= 68 && input[0..4] == TRANSFER_SELECTOR {
-            // Extract recipient address (bytes 4-36, padded to 32 bytes)
-            let to_bytes = &input[16..36]; // Skip padding, get 20 bytes of address
-            let to = Address::from_slice(to_bytes);
-            
-            // Extract amount (bytes 36-68)
-            let amount_bytes = &input[36..68];
-            let amount = U256::from_be_slice(amount_bytes);
-            
-            return Some(Erc20Transfer {
-                from,
-                to,
-                amount,
-                token,
-            });
+        // Minimum required length: 4 (selector) + 32 (address) + 32 (amount) = 68
+        if input.len() < 68 {
+            return None;
         }
-        None
+        
+        // Check function selector
+        if !FunctionSelector::TRANSFER.matches(input) {
+            return None;
+        }
+        
+        // Extract recipient address (bytes 16-36, skipping 12 bytes of padding)
+        let to = Address::from_slice(
+            input.get(16..36)?
+        );
+        
+        // Extract amount (bytes 36-68)
+        let amount = U256::from_be_slice(
+            input.get(36..68)?
+        );
+        
+        Some(Erc20Transfer {
+            from,
+            to,
+            amount,
+            token,
+        })
     }
     
     /// Parse ERC-20 transferFrom function call from input data
     /// transferFrom(address,address,uint256) - 0x23b872dd
     fn parse_erc20_transfer_from(input: &Bytes, token: Address) -> Option<Erc20Transfer> {
-        // ERC-20 transferFrom function selector
-        const TRANSFER_FROM_SELECTOR: [u8; 4] = [0x23, 0xb8, 0x72, 0xdd];
-        
-        // Check if input is long enough and starts with transferFrom selector
-        if input.len() >= 100 && input[0..4] == TRANSFER_FROM_SELECTOR {
-            // Extract from address (bytes 4-36, padded to 32 bytes)
-            let from_bytes = &input[16..36]; // Skip padding, get 20 bytes of address
-            let from = Address::from_slice(from_bytes);
-            
-            // Extract to address (bytes 36-68, padded to 32 bytes)
-            let to_bytes = &input[48..68]; // Skip padding, get 20 bytes of address
-            let to = Address::from_slice(to_bytes);
-            
-            // Extract amount (bytes 68-100)
-            let amount_bytes = &input[68..100];
-            let amount = U256::from_be_slice(amount_bytes);
-            
-            return Some(Erc20Transfer {
-                from,
-                to,
-                amount,
-                token,
-            });
+        // Minimum required length: 4 (selector) + 32 (from) + 32 (to) + 32 (amount) = 100
+        if input.len() < 100 {
+            return None;
         }
-        None
+        
+        // Check function selector
+        if !FunctionSelector::TRANSFER_FROM.matches(input) {
+            return None;
+        }
+        
+        // Extract from address (bytes 16-36, skipping 12 bytes of padding)
+        let from = Address::from_slice(
+            input.get(16..36)?
+        );
+        
+        // Extract to address (bytes 48-68, skipping 12 bytes of padding)
+        let to = Address::from_slice(
+            input.get(48..68)?
+        );
+        
+        // Extract amount (bytes 68-100)
+        let amount = U256::from_be_slice(
+            input.get(68..100)?
+        );
+        
+        Some(Erc20Transfer {
+            from,
+            to,
+            amount,
+            token,
+        })
     }
     
-    /// Check if an address is a known stablecoin
-    fn is_stablecoin(address: &Address) -> Option<&'static str> {
-        // Convert address to lowercase hex string for comparison
-        let addr_hex = format!("{:?}", address).to_lowercase();
+    /// Check if an address is a known stablecoin and return its info
+    fn get_stablecoin_info(address: &Address) -> Option<&'static StablecoinInfo> {
+        STABLECOIN_ADDRESSES.get(address)
+    }
+    
+    /// Process a potential stablecoin transaction
+    fn process_stablecoin_transaction(
+        &self,
+        block_number: BlockNumber,
+        tx_hash: alloy_primitives::TxHash,
+        token_address: Address,
+        sender: Address,
+        input: &Bytes,
+    ) {
+        let Some(stablecoin_info) = Self::get_stablecoin_info(&token_address) else {
+            return;
+        };
         
-        // Known stablecoin addresses on Ethereum mainnet
-        if addr_hex.contains("dac17f958d2ee523a2206206994597c13d831ec7") {
-            Some("USDT")
-        } else if addr_hex.contains("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48") {
-            Some("USDC")
-        } else if addr_hex.contains("6b175474e89094c44da98b954eedeac495271d0f") {
-            Some("DAI")
-        } else {
-            None
+        // Try to parse as ERC-20 transfer or transferFrom
+        let transfer = Self::parse_erc20_transfer(input, sender, token_address)
+            .or_else(|| Self::parse_erc20_transfer_from(input, token_address));
+        
+        if let Some(transfer) = transfer {
+            let function_type = if FunctionSelector::TRANSFER.matches(input) {
+                "transfer"
+            } else {
+                "transferFrom"
+            };
+            
+            info!(
+                block = %block_number,
+                tx_hash = ?tx_hash,
+                stablecoin = %stablecoin_info.name,
+                from = ?transfer.from,
+                to = ?transfer.to,
+                amount = ?transfer.amount,
+                amount_decimal = ?format_token_amount(transfer.amount, stablecoin_info.decimals),
+                "Found {} {}", stablecoin_info.name, function_type
+            );
         }
     }
 
@@ -208,109 +317,55 @@ where
                 "Processing block"
             );
 
-            // Loop through all transactions in the block
-            // We need to access transactions and senders separately
+            // Process all transactions in the block
             let transactions: Vec<_> = block.body().transactions().collect();
+            let senders = block.senders();
             
-            // Each transaction should have a corresponding sender
-            for (tx_index, transaction) in transactions.iter().enumerate() {
+            // Ensure we have matching senders for all transactions
+            if transactions.len() != senders.len() {
+                error!(
+                    block = %block_number,
+                    tx_count = %transactions.len(),
+                    sender_count = %senders.len(),
+                    "Transaction and sender count mismatch"
+                );
+                continue;
+            }
+            
+            // Process each transaction with its corresponding sender
+            for (transaction, &sender) in transactions.iter().zip(senders.iter()) {
                 // Get transaction hash for identification
                 let tx_hash = transaction.hash();
-                
-                // Get the sender - blocks have recovered senders
-                let sender = block.senders()
-                    .get(tx_index)
-                    .copied()
-                    .unwrap_or_default();
                 
                 // Extract transaction data - we need to match on the envelope variant
                 let tx_type = transaction.ty();
                 
-                // Extract to, value, and input based on transaction type
-                // The transaction envelope contains different variants for different transaction types
-                let (to, value, input) = match transaction {
-                    EthereumTxEnvelope::Legacy(tx) => {
-                        (tx.tx().to(), tx.tx().value(), tx.tx().input())
-                    }
-                    EthereumTxEnvelope::Eip2930(tx) => {
-                        (tx.tx().to(), tx.tx().value(), tx.tx().input())
-                    }
-                    EthereumTxEnvelope::Eip1559(tx) => {
-                        (tx.tx().to(), tx.tx().value(), tx.tx().input())
-                    }
-                    EthereumTxEnvelope::Eip4844(tx) => {
-                        (tx.tx().to(), tx.tx().value(), tx.tx().input())
-                    }
-                    _ => {
-                        // Other transaction types we might not handle yet
-                        (None, U256::ZERO, &Bytes::new())
-                    }
-                };
+                // Extract transaction data using a helper function
+                let (to, value, input) = extract_tx_data(transaction);
                 
-                // Log full transaction details
+                // Log transaction details for debugging
                 info!(
                     block = %block_number,
-                    tx_index = %tx_index,
                     tx_hash = ?tx_hash,
                     from = ?sender,
                     to = ?to,
                     value = ?value,
                     input_len = %input.len(),
-                    input_first_4_bytes = ?input.get(0..4).map(|b| format!("0x{}", hex::encode(b))),
+                    input_selector = ?input.get(0..4).map(|b| format!("0x{}", hex::encode(b))),
                     tx_type = %tx_type,
-                    "Processing transaction with full data"
+                    "Processing transaction"
                 );
                 
-                // TODO: Parse transaction input data to identify stablecoin operations
-                // Common ERC20 function selectors (first 4 bytes of input):
-                // - 0xa9059cbb: transfer(address,uint256)
-                // - 0x23b872dd: transferFrom(address,address,uint256)
-                // - 0x095ea7b3: approve(address,uint256)
-                // - 0x70a08231: balanceOf(address)
-                // - 0x18160ddd: totalSupply()
-                
-                // Check if this is a stablecoin transaction and parse transfer data
+                // Process potential stablecoin transaction
                 if let Some(to_addr) = to {
-                    if let Some(stablecoin_name) = Self::is_stablecoin(&to_addr) {
-                        // Try to parse as ERC-20 transfer
-                        if let Some(transfer) = Self::parse_erc20_transfer(input, sender, to_addr) {
-                            info!(
-                                block = %block_number,
-                                tx_hash = ?tx_hash,
-                                stablecoin = %stablecoin_name,
-                                from = ?transfer.from,
-                                to = ?transfer.to,
-                                amount = ?transfer.amount,
-                                amount_decimal = ?format_token_amount(transfer.amount, stablecoin_name),
-                                "Found {} transfer", stablecoin_name
-                            );
-                        }
-                        // Try to parse as ERC-20 transferFrom
-                        else if let Some(transfer) = Self::parse_erc20_transfer_from(input, to_addr) {
-                            info!(
-                                block = %block_number,
-                                tx_hash = ?tx_hash,
-                                stablecoin = %stablecoin_name,
-                                from = ?transfer.from,
-                                to = ?transfer.to,
-                                amount = ?transfer.amount,
-                                amount_decimal = ?format_token_amount(transfer.amount, stablecoin_name),
-                                "Found {} transferFrom", stablecoin_name
-                            );
-                        }
-                    }
+                    self.process_stablecoin_transaction(
+                        block_number,
+                        tx_hash,
+                        to_addr,
+                        sender,
+                        input,
+                    );
                 }
-                
-                // Access transaction receipts from the execution outcome for event logs
-                // The execution outcome contains receipts for each block
-                // Note: receipts are grouped by block, not individual transactions
-                
-                // TODO: Access the execution outcome properly to get:
-                // - Transaction receipts with logs
-                // - Extract logs from receipts to identify ERC20 events
-                // - Transfer events (topic0: 0xddf252ad...)
-                // - Approval events
-                // - Mint/Burn events for stablecoins
             }
         }
 

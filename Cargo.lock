@@ -9498,6 +9498,7 @@ dependencies = [
  "eyre",
  "futures",
  "hex",
+ "once_cell",
  "reth",
  "reth-ethereum",
  "reth-ethereum-cli",
