@@ -289,8 +289,13 @@ impl StablecoinMonitor {
                     };
 
                     info!(
-                        "Found {} transfer: {} -> {} amount: {}",
-                        tx_data.stablecoin, tx_data.from, tx_data.to, tx_data.amount
+                        "Found {} transfer: from={} to={} amount={} tx_hash={} block={}",
+                        tx_data.stablecoin,
+                        tx_data.from,
+                        tx_data.to,
+                        tx_data.amount,
+                        tx_data.tx_hash,
+                        tx_data.block_number
                     );
 
                     // Publish to Redis
