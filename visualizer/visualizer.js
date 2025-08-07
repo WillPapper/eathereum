@@ -23,35 +23,102 @@ const stats = {
 class TransactionParticle {
     constructor(stablecoin, amount, from, to) {
         this.stablecoin = stablecoin;
-        this.amount = amount;
+        this.amount = parseFloat(amount);
         this.from = from;
         this.to = to;
         
-        // Create sphere geometry for the particle
-        const size = Math.log10(parseFloat(amount) + 1) * 0.1 + 0.1; // Size based on amount
-        const geometry = new THREE.SphereGeometry(size, 8, 8);
-        const material = new THREE.MeshBasicMaterial({
-            color: STABLECOIN_COLORS[stablecoin] || 0xFFFFFF,
-            transparent: true,
-            opacity: 0.8
-        });
+        // Calculate size based on amount (logarithmic scale for better visualization)
+        // Small transfers: 0.2-0.5, Medium: 0.5-1.5, Large: 1.5-3.0
+        const amountLog = Math.log10(this.amount + 1);
+        const size = Math.min(Math.max(amountLog * 0.3 + 0.2, 0.2), 3.0);
+        
+        // Determine detail level based on amount
+        const segments = this.amount > 10000 ? 16 : (this.amount > 1000 ? 12 : 8);
+        
+        // Create main sphere geometry
+        const geometry = new THREE.SphereGeometry(size, segments, segments);
+        
+        // Material changes based on amount
+        const baseColor = STABLECOIN_COLORS[stablecoin] || 0xFFFFFF;
+        
+        // For large amounts, use emissive material for glow effect
+        const material = this.amount > 5000 ? 
+            new THREE.MeshPhongMaterial({
+                color: baseColor,
+                emissive: baseColor,
+                emissiveIntensity: Math.min(this.amount / 50000, 0.5),
+                transparent: true,
+                opacity: 0.9,
+                shininess: 100
+            }) :
+            new THREE.MeshLambertMaterial({
+                color: baseColor,
+                transparent: true,
+                opacity: Math.min(0.5 + amountLog * 0.1, 0.95)
+            });
         
         this.mesh = new THREE.Mesh(geometry, material);
         
-        // Random starting position
+        // Add glow effect for very large transfers (>10000)
+        if (this.amount > 10000) {
+            this.createGlowEffect(baseColor, size);
+        }
+        
+        // Add ring for massive transfers (>50000)
+        if (this.amount > 50000) {
+            this.createRing(baseColor, size);
+        }
+        
+        // Position based on amount (larger amounts start higher)
         this.mesh.position.x = (Math.random() - 0.5) * 100;
-        this.mesh.position.y = 50;
+        this.mesh.position.y = 50 + (amountLog * 5); // Higher start for larger amounts
         this.mesh.position.z = (Math.random() - 0.5) * 100;
         
-        // Velocity for animation
+        // Velocity affected by size (larger = slower fall)
+        const massFactor = 1 / (1 + size * 0.3);
         this.velocity = {
-            x: (Math.random() - 0.5) * 0.5,
-            y: -Math.random() * 0.5 - 0.5,
-            z: (Math.random() - 0.5) * 0.5
+            x: (Math.random() - 0.5) * 0.5 * massFactor,
+            y: -(Math.random() * 0.3 + 0.4) * massFactor,
+            z: (Math.random() - 0.5) * 0.5 * massFactor
+        };
+        
+        // Rotation for visual interest (faster for smaller amounts)
+        this.rotation = {
+            x: (Math.random() - 0.5) * 0.02 / size,
+            y: (Math.random() - 0.5) * 0.02 / size,
+            z: (Math.random() - 0.5) * 0.02 / size
         };
         
         this.age = 0;
-        this.maxAge = 300; // Frames before particle fades out
+        this.maxAge = 300 + (amountLog * 50); // Larger amounts last longer
+        this.size = size;
+        this.pulsePhase = Math.random() * Math.PI * 2;
+    }
+    
+    createGlowEffect(color, size) {
+        // Create outer glow sphere
+        const glowGeometry = new THREE.SphereGeometry(size * 1.5, 8, 8);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.2,
+            side: THREE.BackSide
+        });
+        this.glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+        this.mesh.add(this.glowMesh);
+    }
+    
+    createRing(color, size) {
+        // Create a ring around massive transfers
+        const ringGeometry = new THREE.TorusGeometry(size * 2, size * 0.1, 4, 16);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.6
+        });
+        this.ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        this.ring.rotation.x = Math.PI / 2;
+        this.mesh.add(this.ring);
     }
     
     update() {
@@ -62,20 +129,52 @@ class TransactionParticle {
         this.mesh.position.y += this.velocity.y;
         this.mesh.position.z += this.velocity.z;
         
-        // Apply gravity
-        this.velocity.y -= 0.01;
+        // Apply rotation
+        this.mesh.rotation.x += this.rotation.x;
+        this.mesh.rotation.y += this.rotation.y;
+        this.mesh.rotation.z += this.rotation.z;
         
-        // Bounce off floor
-        if (this.mesh.position.y < -30) {
-            this.mesh.position.y = -30;
-            this.velocity.y *= -0.5;
+        // Apply gravity (less for larger amounts)
+        this.velocity.y -= 0.01 * (1 / (1 + this.size * 0.2));
+        
+        // Bounce off floor with energy loss based on size
+        if (this.mesh.position.y < -30 + this.size) {
+            this.mesh.position.y = -30 + this.size;
+            this.velocity.y *= -0.5 * (1 / (1 + this.size * 0.1));
+            
+            // Add some lateral movement on bounce for variety
+            this.velocity.x += (Math.random() - 0.5) * 0.1;
+            this.velocity.z += (Math.random() - 0.5) * 0.1;
+        }
+        
+        // Pulse effect for large amounts
+        if (this.amount > 5000) {
+            const pulseScale = 1 + Math.sin(this.age * 0.05 + this.pulsePhase) * 0.05;
+            this.mesh.scale.set(pulseScale, pulseScale, pulseScale);
+            
+            // Rotate ring if it exists
+            if (this.ring) {
+                this.ring.rotation.z += 0.02;
+            }
+        }
+        
+        // Update glow intensity based on age
+        if (this.glowMesh) {
+            const glowIntensity = 0.2 * (1 - this.age / this.maxAge);
+            this.glowMesh.material.opacity = glowIntensity;
         }
         
         // Age and fade
         this.age++;
-        if (this.age > this.maxAge * 0.7) {
-            const fadeProgress = (this.age - this.maxAge * 0.7) / (this.maxAge * 0.3);
-            this.mesh.material.opacity = 0.8 * (1 - fadeProgress);
+        const fadeStart = this.maxAge * 0.7;
+        if (this.age > fadeStart) {
+            const fadeProgress = (this.age - fadeStart) / (this.maxAge * 0.3);
+            const targetOpacity = this.amount > 5000 ? 0.9 : (0.5 + Math.log10(this.amount + 1) * 0.1);
+            this.mesh.material.opacity = targetOpacity * (1 - fadeProgress);
+            
+            if (this.ring) {
+                this.ring.material.opacity = 0.6 * (1 - fadeProgress);
+            }
         }
         
         return this.age < this.maxAge;
@@ -172,6 +271,16 @@ function animate() {
             scene.remove(particle.mesh);
             particle.mesh.geometry.dispose();
             particle.mesh.material.dispose();
+            
+            // Clean up additional meshes
+            if (particle.glowMesh) {
+                particle.glowMesh.geometry.dispose();
+                particle.glowMesh.material.dispose();
+            }
+            if (particle.ring) {
+                particle.ring.geometry.dispose();
+                particle.ring.material.dispose();
+            }
         }
         return alive;
     });
@@ -241,9 +350,26 @@ function simulateTransactions() {
         const stablecoins = ['USDC', 'USDT', 'DAI'];
         const stablecoin = stablecoins[Math.floor(Math.random() * stablecoins.length)];
         
+        // Generate different amount ranges for variety
+        let amount;
+        const rand = Math.random();
+        if (rand < 0.6) {
+            // 60% small transactions (1-1000)
+            amount = (Math.random() * 999 + 1).toFixed(2);
+        } else if (rand < 0.85) {
+            // 25% medium transactions (1000-10000)
+            amount = (Math.random() * 9000 + 1000).toFixed(2);
+        } else if (rand < 0.95) {
+            // 10% large transactions (10000-50000)
+            amount = (Math.random() * 40000 + 10000).toFixed(2);
+        } else {
+            // 5% whale transactions (50000-500000)
+            amount = (Math.random() * 450000 + 50000).toFixed(2);
+        }
+        
         const transaction = {
             stablecoin: stablecoin,
-            amount: (Math.random() * 10000).toFixed(2),
+            amount: amount,
             from: '0x' + Math.random().toString(16).substr(2, 40),
             to: '0x' + Math.random().toString(16).substr(2, 40)
         };
@@ -273,6 +399,16 @@ function clearParticles() {
         scene.remove(particle.mesh);
         particle.mesh.geometry.dispose();
         particle.mesh.material.dispose();
+        
+        // Clean up additional meshes
+        if (particle.glowMesh) {
+            particle.glowMesh.geometry.dispose();
+            particle.glowMesh.material.dispose();
+        }
+        if (particle.ring) {
+            particle.ring.geometry.dispose();
+            particle.ring.material.dispose();
+        }
     });
     particles = [];
     
