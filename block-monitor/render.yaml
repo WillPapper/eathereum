@@ -2,9 +2,9 @@ services:
   # Background worker that continuously monitors blockchain
   - type: worker
     name: block-monitor
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: ./block-monitor
+    runtime: rust
+    buildCommand: cargo build --release
+    startCommand: ./target/release/block-monitor
     envVars:
       - key: RPC_URL
         sync: false  # Set this in Render dashboard
