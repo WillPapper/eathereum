@@ -453,18 +453,27 @@ class TransactionAnimal {
         // Create animal group
         this.mesh = new THREE.Group();
         
-        // Random spawn position
-        this.mesh.position.x = (Math.random() - 0.5) * 80;
+        // Random spawn position with safe zone around player
+        const safeRadius = 25; // Minimum spawn distance from player
+        let spawnX, spawnZ;
+        
+        do {
+            spawnX = (Math.random() - 0.5) * 80;
+            spawnZ = (Math.random() - 0.5) * 80;
+        } while (playerControls.mesh && 
+                 Math.sqrt(spawnX * spawnX + spawnZ * spawnZ) < safeRadius);
+        
+        this.mesh.position.x = spawnX;
         this.mesh.position.y = -30 + this.size; // Start on ground
-        this.mesh.position.z = (Math.random() - 0.5) * 80;
+        this.mesh.position.z = spawnZ;
         
         // Movement properties
         this.velocity = new THREE.Vector3();
         this.targetDirection = Math.random() * Math.PI * 2;
-        this.speed = 5 + Math.random() * 10; // Faster animals are harder to catch
-        this.turnSpeed = 0.05 + Math.random() * 0.05;
+        this.speed = 0.5 + Math.random() * 1.5; // Much slower base speed (was 5-15, now 0.5-2)
+        this.turnSpeed = 0.02 + Math.random() * 0.02; // Slower turning
         this.jumpCooldown = 0;
-        this.fleeRadius = 20; // Distance at which animal flees from bird
+        this.fleeRadius = 15; // Distance at which animal reacts to player
         
         // Get animal color based on stablecoin
         this.baseColor = STABLECOIN_COLORS[stablecoin] || 0xFFFFFF;
@@ -473,18 +482,18 @@ class TransactionAnimal {
         if (this.amount < 100) {
             this.createSmallAnimal(); // Rabbit
             this.animalType = 'rabbit';
-            this.speed *= 1.5; // Rabbits are fast
+            this.speed *= 1.2; // Rabbits are slightly faster
         } else if (this.amount < 1000) {
             this.createMediumAnimal(); // Fox
             this.animalType = 'fox';
         } else if (this.amount < 10000) {
             this.createLargeAnimal(); // Deer
             this.animalType = 'deer';
-            this.speed *= 0.8; // Deer are slightly slower
+            this.speed *= 0.9; // Deer are slightly slower
         } else {
             this.createGiantAnimal(); // Bear (whale transaction)
             this.animalType = 'bear';
-            this.speed *= 0.5; // Bears are slow but valuable
+            this.speed *= 0.6; // Bears are slower but valuable
         }
         
         // Start with small scale for spawn animation
@@ -677,7 +686,7 @@ class TransactionAnimal {
                     fleeDirection.normalize();
                     
                     this.targetDirection = Math.atan2(fleeDirection.x, fleeDirection.z);
-                    this.speed = Math.min(this.speed * 1.5, 30); // Panic speed
+                    this.speed = Math.min(this.speed * 2, 4); // Panic speed but still slow (was 30, now 4)
                     
                     // Jump when fleeing
                     if (this.jumpCooldown <= 0 && Math.random() < 0.1) {
@@ -692,17 +701,17 @@ class TransactionAnimal {
                     chaseDirection.normalize();
                     
                     this.targetDirection = Math.atan2(chaseDirection.x, chaseDirection.z);
-                    this.speed = Math.min(this.speed * 1.2, 25);
+                    this.speed = Math.min(this.speed * 1.5, 3); // Chase speed but still manageable (was 25, now 3)
                 }
             } else {
                 // Wander randomly
                 this.targetDirection += (Math.random() - 0.5) * this.turnSpeed;
-                this.speed = 5 + Math.random() * 5;
+                this.speed = 0.5 + Math.random() * 1; // Slow wandering (was 5-10, now 0.5-1.5)
             }
         } else {
             // Wander randomly
             this.targetDirection += (Math.random() - 0.5) * this.turnSpeed;
-            this.speed = 5 + Math.random() * 5;
+            this.speed = 0.5 + Math.random() * 1; // Slow wandering
         }
         
         // Apply movement
