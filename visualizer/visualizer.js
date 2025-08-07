@@ -3,6 +3,8 @@ let scene, camera, renderer;
 let particles = [];
 let isPaused = false;
 let ws = null;
+let gameOver = false;
+let moneyCollected = 0;
 
 // Player controls (ground-based animal)
 let playerControls = {
@@ -825,6 +827,7 @@ class TransactionAnimal {
 // Garden elements storage
 let gardenElements = [];
 let animals = []; // Track animals separately for collision detection
+let plants = []; // Track plants separately for collision detection
 
 // Create player animal
 function createPlayer() {
@@ -971,16 +974,18 @@ function checkCollisions() {
     }
     
     // Check collisions with plants (obstacles, not deadly)
-    plants.forEach(plant => {
-        const distance = playerPos.distanceTo(plant.mesh.position);
-        const collisionDistance = playerRadius + plant.size * 0.5;
-        
-        if (distance < collisionDistance) {
-            // Push player away from plant
-            const pushDirection = new THREE.Vector3()
-                .subVectors(playerPos, plant.mesh.position)
-                .normalize();
-            playerControls.mesh.position.add(pushDirection.multiplyScalar(collisionDistance - distance));
+    particles.forEach(plant => {
+        if (plant.mesh) {
+            const distance = playerPos.distanceTo(plant.mesh.position);
+            const collisionDistance = playerRadius + (plant.size || 1) * 0.5;
+            
+            if (distance < collisionDistance) {
+                // Push player away from plant
+                const pushDirection = new THREE.Vector3()
+                    .subVectors(playerPos, plant.mesh.position)
+                    .normalize();
+                playerControls.mesh.position.add(pushDirection.multiplyScalar(collisionDistance - distance));
+            }
         }
     });
 }
