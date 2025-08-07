@@ -12,9 +12,12 @@ let playerControls = {
     moveBackward: false,
     moveLeft: false,
     moveRight: false,
+    rotateLeft: false,  // Q key rotation
+    rotateRight: false, // E key rotation
     boost: false,
     velocity: new THREE.Vector3(),
     rotation: 0,
+    rotationSpeed: 0.05, // How fast the player rotates
     mouseX: 0,
     mouseY: 0,
     isPlaying: false,
@@ -29,12 +32,56 @@ let gameState = {
     highScore: 0,
     currentScore: 0,
     startTime: null,
-    endTime: null
+    endTime: null,
+    lives: 1, // Player starts with 1 life
+    maxLives: 5 // Maximum lives player can have
 };
+
+// Power-up fruit system
+let powerUpFruits = []; // Special glowing fruits that give lives
+let lastPowerUpTime = 0;
+const POWER_UP_INTERVAL = 120000; // 2 minutes in milliseconds
+const POWER_UP_GLOW_RADIUS = 15; // Distance at which fruits start glowing
+const MAX_POWER_UP_FRUITS = 5; // Maximum life fruits at any time
+const POWER_UP_LIFETIME = 30000; // 30 seconds in milliseconds
+const MIN_POWER_UP_DISTANCE = 20; // Minimum distance between life fruits
+
+// Leverage fruit system
+let leverageFruits = []; // Special fruits that double player size
+let lastLeverageFruitTime = 0;
+let lastLeverageFruitEaten = 0; // Track when last leverage fruit was eaten
+let leverageEaten = 0; // Count of leverage fruits eaten in double-eat window
+let originalPlayerSize = 1.0; // Store original player size for resetting
+let currentLeverageMultiplier = 1.0; // Current leverage multiplier (1.0 = no effect)
+let leverageActive = false; // Whether leverage effect is active
+let leverageEffectTimer = null; // Timer to reset player size
+const LEVERAGE_FRUIT_INTERVAL = 90000; // 1.5 minutes in milliseconds
+const MAX_LEVERAGE_FRUITS = 2; // Maximum leverage fruits at any time
+const LEVERAGE_FRUIT_LIFETIME = 45000; // 45 seconds in milliseconds
+const LEVERAGE_DOUBLE_EAT_WINDOW = 5000; // 5 seconds to double eat for 4x effect
+const LEVERAGE_EFFECT_DURATION = 15000; // 15 seconds of size effect
+
+// Speedrun fruit system
+let speedrunFruits = []; // Special fruits that double player speed
+let lastSpeedrunFruitTime = 0;
+let lastSpeedrunFruitEaten = 0; // Track when last speedrun fruit was eaten
+let speedrunEaten = 0; // Count of speedrun fruits eaten in double-eat window
+let originalPlayerSpeed = 10; // Store original player speed for resetting
+let speedrunActive = false; // Whether speedrun effect is active
+let speedrunEffectTimer = null; // Timer to reset player speed
+const SPEEDRUN_FRUIT_INTERVAL = 75000; // 1.25 minutes in milliseconds
+const MAX_SPEEDRUN_FRUITS = 2; // Maximum speedrun fruits at any time
+const SPEEDRUN_FRUIT_LIFETIME = 40000; // 40 seconds in milliseconds
+const SPEEDRUN_DOUBLE_EAT_WINDOW = 5000; // 5 seconds to double eat for 4x effect
+const SPEEDRUN_EFFECT_DURATION = 12000; // 12 seconds of speed effect
 
 // Configuration
 const MAX_PLANTS = 10000; // Maximum number of plants in the garden
 const REMOVE_BATCH_SIZE = 100; // Number of oldest plants to remove when cap is reached
+const INITIAL_BORDER_TREES = 50; // Initial trees on the border
+const MAX_BORDER_TREES = 100; // Maximum border trees
+const MASSIVE_TRANSACTION_THRESHOLD = 10000; // $10k threshold for new trees
+const GARDEN_RADIUS = 80; // Radius for border tree placement
 
 // Stablecoin colors - nature-inspired, vibrant colors
 const STABLECOIN_COLORS = {
@@ -53,6 +100,9 @@ const stats = {
     currentAnimals: 0, // Track current animal count
     moneyCollected: 0  // Track money collected from eating animals
 };
+
+// Initialize stats.moneyCollected to match global moneyCollected
+stats.moneyCollected = 0;
 
 // Transaction plant class - represents a transaction as a growing plant
 class TransactionPlant {
@@ -473,7 +523,7 @@ class TransactionAnimal {
         this.speed = 0.5 + Math.random() * 1.5; // Much slower base speed (was 5-15, now 0.5-2)
         this.turnSpeed = 0.02 + Math.random() * 0.02; // Slower turning
         this.jumpCooldown = 0;
-        this.fleeRadius = 15; // Distance at which animal reacts to player
+        this.fleeRadius = 5; // Much smaller distance at which animal reacts to player
         
         // Get animal color based on stablecoin
         this.baseColor = STABLECOIN_COLORS[stablecoin] || 0xFFFFFF;
@@ -672,51 +722,107 @@ class TransactionAnimal {
         // Update threat indicator based on player size
         this.updateThreatIndicator();
         
-        // Check distance to player for behavior
+        // Check distance to player for behavior (much less reactive)
         if (playerControls.mesh) {
             const distanceToPlayer = playerControls.mesh.position.distanceTo(this.mesh.position);
             
-            // Different behaviors based on relative size
-            if (playerControls.isPlaying && distanceToPlayer < this.fleeRadius) {
-                if (this.size < playerControls.size * 0.8) {
-                    // Smaller than player - flee!
+            // Only react to player if VERY close AND only sometimes
+            if (playerControls.isPlaying && distanceToPlayer < this.fleeRadius && Math.random() < 0.3) {
+                if (this.size < playerControls.size * 0.7) {
+                    // Only much smaller animals flee, and only sometimes
                     const fleeDirection = new THREE.Vector3();
                     fleeDirection.subVectors(this.mesh.position, playerControls.mesh.position);
                     fleeDirection.y = 0;
                     fleeDirection.normalize();
                     
-                    this.targetDirection = Math.atan2(fleeDirection.x, fleeDirection.z);
-                    this.speed = Math.min(this.speed * 2, 4); // Panic speed but still slow (was 30, now 4)
+                    // Blend flee direction with current direction (don't change abruptly)
+                    const fleeAngle = Math.atan2(fleeDirection.x, fleeDirection.z);
+                    const directionDiff = fleeAngle - this.targetDirection;
+                    let normalizedDiff = directionDiff;
+                    while (normalizedDiff > Math.PI) normalizedDiff -= Math.PI * 2;
+                    while (normalizedDiff < -Math.PI) normalizedDiff += Math.PI * 2;
                     
-                    // Jump when fleeing
-                    if (this.jumpCooldown <= 0 && Math.random() < 0.1) {
-                        this.velocity.y = 5 + Math.random() * 5;
-                        this.jumpCooldown = 60;
+                    this.targetDirection += normalizedDiff * 0.2; // Gradual steering away
+                    this.speed = Math.min(this.speed * 1.3, 2); // Slightly faster but not panic
+                    
+                } else if (this.size > playerControls.size * 1.5) {
+                    // Only much larger animals chase, and only rarely
+                    if (Math.random() < 0.1) { // 10% chance to chase
+                        const chaseDirection = new THREE.Vector3();
+                        chaseDirection.subVectors(playerControls.mesh.position, this.mesh.position);
+                        chaseDirection.y = 0;
+                        chaseDirection.normalize();
+                        
+                        // Blend chase direction with current direction
+                        const chaseAngle = Math.atan2(chaseDirection.x, chaseDirection.z);
+                        const directionDiff = chaseAngle - this.targetDirection;
+                        let normalizedDiff = directionDiff;
+                        while (normalizedDiff > Math.PI) normalizedDiff -= Math.PI * 2;
+                        while (normalizedDiff < -Math.PI) normalizedDiff += Math.PI * 2;
+                        
+                        this.targetDirection += normalizedDiff * 0.15; // Gradual steering toward
+                        this.speed = Math.min(this.speed * 1.2, 2.5); // Slightly faster
                     }
-                } else if (this.size > playerControls.size * 1.2) {
-                    // Larger than player - chase!
-                    const chaseDirection = new THREE.Vector3();
-                    chaseDirection.subVectors(playerControls.mesh.position, this.mesh.position);
-                    chaseDirection.y = 0;
-                    chaseDirection.normalize();
-                    
-                    this.targetDirection = Math.atan2(chaseDirection.x, chaseDirection.z);
-                    this.speed = Math.min(this.speed * 1.5, 3); // Chase speed but still manageable (was 25, now 3)
                 }
-            } else {
-                // Wander randomly
-                this.targetDirection += (Math.random() - 0.5) * this.turnSpeed;
-                this.speed = 0.5 + Math.random() * 1; // Slow wandering (was 5-10, now 0.5-1.5)
             }
-        } else {
-            // Wander randomly
+            
+            // Always check for tree avoidance
+            const avoidanceDirection = this.getTreeAvoidanceDirection();
+            if (avoidanceDirection !== null) {
+                const directionDiff = avoidanceDirection - this.targetDirection;
+                let normalizedDiff = directionDiff;
+                while (normalizedDiff > Math.PI) normalizedDiff -= Math.PI * 2;
+                while (normalizedDiff < -Math.PI) normalizedDiff += Math.PI * 2;
+                
+                this.targetDirection += normalizedDiff * 0.15;
+            }
+            
+            // Always add some random wandering (main behavior)
             this.targetDirection += (Math.random() - 0.5) * this.turnSpeed;
-            this.speed = 0.5 + Math.random() * 1; // Slow wandering
+            
+            // Maintain natural wandering speed
+            if (!this.reacting) {
+                this.speed = 0.5 + Math.random() * 1;
+            }
+            
+        } else {
+            // No player - just natural behavior
+            const avoidanceDirection = this.getTreeAvoidanceDirection();
+            if (avoidanceDirection !== null) {
+                const directionDiff = avoidanceDirection - this.targetDirection;
+                let normalizedDiff = directionDiff;
+                while (normalizedDiff > Math.PI) normalizedDiff -= Math.PI * 2;
+                while (normalizedDiff < -Math.PI) normalizedDiff += Math.PI * 2;
+                
+                this.targetDirection += normalizedDiff * 0.1;
+            } else {
+                this.targetDirection += (Math.random() - 0.5) * this.turnSpeed;
+            }
+            this.speed = 0.5 + Math.random() * 1;
         }
         
         // Apply movement
         this.velocity.x = Math.sin(this.targetDirection) * this.speed * 0.1;
         this.velocity.z = Math.cos(this.targetDirection) * this.speed * 0.1;
+        
+        // Check for tree collisions before moving
+        const nextPosition = this.mesh.position.clone().add(this.velocity);
+        const collisionResult = this.checkTreeCollisions(nextPosition);
+        if (collisionResult.hasCollision) {
+            // Calculate bounce direction based on the closest tree
+            const bounceDirection = this.calculateBounceDirection(collisionResult.closestTree);
+            this.targetDirection = bounceDirection;
+            
+            // Adjust velocity immediately
+            this.velocity.x = Math.sin(this.targetDirection) * this.speed * 0.1;
+            this.velocity.z = Math.cos(this.targetDirection) * this.speed * 0.1;
+            
+            // Add a small jump when bouncing
+            if (this.jumpCooldown <= 0) {
+                this.velocity.y = 2 + Math.random() * 2;
+                this.jumpCooldown = 30;
+            }
+        }
         
         // Apply gravity
         this.velocity.y -= 0.3;
@@ -761,49 +867,291 @@ class TransactionAnimal {
         return this.isAlive;
     }
     
-    // Update threat indicator based on player size
+    // Update threat indicator with floating icons above animals
     updateThreatIndicator() {
-        if (!playerControls.isPlaying) {
+        if (!playerControls.isPlaying || !playerControls.mesh) {
             // Remove indicators when not playing
             if (this.indicator) {
                 this.mesh.remove(this.indicator);
-                this.indicator.geometry.dispose();
-                this.indicator.material.dispose();
+                if (this.indicator.geometry) this.indicator.geometry.dispose();
+                if (this.indicator.material) this.indicator.material.dispose();
                 this.indicator = null;
             }
             return;
         }
         
-        // Determine if prey (blue), neutral (yellow), or predator (red)
-        let indicatorColor;
-        if (this.size < playerControls.size * 0.8) {
-            indicatorColor = 0x4A90E2; // Blue - can eat
-        } else if (this.size > playerControls.size * 1.2) {
-            indicatorColor = 0xFF0000; // Red - dangerous!
-        } else {
-            indicatorColor = 0xFFFF00; // Yellow - similar size
+        // Show indicator when within reasonable viewing distance (increased for better planning)
+        const distance = playerControls.mesh.position.distanceTo(this.mesh.position);
+        const indicatorDistance = 30; // Show indicators at 30 units for strategic planning
+        
+        if (distance > indicatorDistance) {
+            // Remove indicator when player is far
+            if (this.indicator) {
+                this.mesh.remove(this.indicator);
+                if (this.indicator.geometry) this.indicator.geometry.dispose();
+                if (this.indicator.material) this.indicator.material.dispose();
+                this.indicator = null;
+            }
+            return;
         }
         
-        // Create or update indicator
+        // Determine threat level and icon type
+        let iconType, iconColor, backgroundColor;
+        if (this.size < playerControls.size * 1.2) {
+            // Edible - green with food icon (changed from 0.8 to 1.2)
+            iconType = 'edible';
+            iconColor = 0xFFFFFF;
+            backgroundColor = 0x00FF00;
+        } else {
+            // Dangerous - red with warning icon (anything >= 1.2x player size)
+            iconType = 'danger';
+            iconColor = 0xFFFFFF;
+            backgroundColor = 0xFF0000;
+        }
+        
+        // Create or update floating icon indicator
         if (!this.indicator) {
-            const indicatorGeometry = new THREE.RingGeometry(this.size * 1.5, this.size * 1.8, 8);
-            const indicatorMaterial = new THREE.MeshBasicMaterial({
-                color: indicatorColor,
-                transparent: true,
-                opacity: 0.5,
-                side: THREE.DoubleSide
-            });
-            this.indicator = new THREE.Mesh(indicatorGeometry, indicatorMaterial);
-            this.indicator.rotation.x = -Math.PI / 2;
-            this.indicator.position.y = 0.1;
+            this.indicator = this.createFloatingIcon(iconType, iconColor, backgroundColor);
             this.mesh.add(this.indicator);
         } else {
-            this.indicator.material.color.set(indicatorColor);
+            // Update existing indicator if type changed
+            this.updateFloatingIcon(this.indicator, iconType, iconColor, backgroundColor);
         }
         
-        // Pulse indicator for emphasis
-        const pulse = Math.sin(Date.now() * 0.005) * 0.2 + 0.5;
-        this.indicator.material.opacity = pulse;
+        // Position icon above animal with gentle floating
+        const time = Date.now() * 0.001;
+        const floatOffset = Math.sin(time * 2 + this.createdAt * 0.001) * 0.5;
+        this.indicator.position.y = this.size * 2 + 2 + floatOffset;
+        
+        // Scale and opacity based on distance (adjusted for 30 unit range)
+        const distanceFactor = Math.max(0.4, 1 - (distance / indicatorDistance * 0.8));
+        this.indicator.scale.setScalar(distanceFactor * 1.2); // Slightly larger overall for visibility
+        
+        // Make indicator face the camera
+        if (camera) {
+            this.indicator.lookAt(camera.position);
+        }
+    }
+    
+    // Create floating icon indicator
+    createFloatingIcon(iconType, iconColor, backgroundColor) {
+        const iconGroup = new THREE.Group();
+        
+        // Background circle
+        const bgGeometry = new THREE.CircleGeometry(1.2, 12);
+        const bgMaterial = new THREE.MeshBasicMaterial({
+            color: backgroundColor,
+            transparent: true,
+            opacity: 0.9
+        });
+        const background = new THREE.Mesh(bgGeometry, bgMaterial);
+        iconGroup.add(background);
+        
+        // Icon symbol based on type
+        const iconGeometry = this.getIconGeometry(iconType);
+        const iconMaterial = new THREE.MeshBasicMaterial({
+            color: iconColor,
+            transparent: true,
+            opacity: 1.0
+        });
+        const icon = new THREE.Mesh(iconGeometry, iconMaterial);
+        icon.position.z = 0.01; // Slightly in front of background
+        iconGroup.add(icon);
+        
+        // Add border for better visibility
+        const borderGeometry = new THREE.RingGeometry(1.2, 1.4, 12);
+        const borderMaterial = new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.6
+        });
+        const border = new THREE.Mesh(borderGeometry, borderMaterial);
+        iconGroup.add(border);
+        
+        iconGroup.userData = { iconType, iconColor, backgroundColor };
+        return iconGroup;
+    }
+    
+    // Get geometry for different icon types
+    getIconGeometry(iconType) {
+        switch (iconType) {
+            case 'edible':
+                // Fork and knife or plus symbol for edible
+                return this.createPlusIconGeometry();
+            case 'danger':
+                // Skull or X symbol for danger
+                return this.createXIconGeometry();
+            case 'neutral':
+            default:
+                // Equals or dash symbol for neutral
+                return this.createEqualsIconGeometry();
+        }
+    }
+    
+    // Create plus icon geometry (edible)
+    createPlusIconGeometry() {
+        const shape = new THREE.Shape();
+        // Vertical bar
+        shape.moveTo(-0.2, -0.8);
+        shape.lineTo(0.2, -0.8);
+        shape.lineTo(0.2, 0.8);
+        shape.lineTo(-0.2, 0.8);
+        shape.lineTo(-0.2, -0.8);
+        // Horizontal bar
+        shape.moveTo(-0.8, -0.2);
+        shape.lineTo(0.8, -0.2);
+        shape.lineTo(0.8, 0.2);
+        shape.lineTo(-0.8, 0.2);
+        shape.lineTo(-0.8, -0.2);
+        
+        return new THREE.ShapeGeometry(shape);
+    }
+    
+    // Create X icon geometry (danger)
+    createXIconGeometry() {
+        const shape = new THREE.Shape();
+        // Create X shape with two diagonal rectangles
+        const width = 0.3;
+        const length = 1.2;
+        
+        // First diagonal
+        shape.moveTo(-width/2, -length/2);
+        shape.lineTo(width/2, -length/2);
+        shape.lineTo(length/2, -width/2);
+        shape.lineTo(length/2, width/2);
+        shape.lineTo(width/2, length/2);
+        shape.lineTo(-width/2, length/2);
+        shape.lineTo(-length/2, width/2);
+        shape.lineTo(-length/2, -width/2);
+        shape.lineTo(-width/2, -length/2);
+        
+        return new THREE.ShapeGeometry(shape);
+    }
+    
+    // Create equals icon geometry (neutral)
+    createEqualsIconGeometry() {
+        const shape = new THREE.Shape();
+        // Top bar
+        shape.moveTo(-0.6, 0.2);
+        shape.lineTo(0.6, 0.2);
+        shape.lineTo(0.6, 0.4);
+        shape.lineTo(-0.6, 0.4);
+        shape.lineTo(-0.6, 0.2);
+        // Bottom bar
+        shape.moveTo(-0.6, -0.4);
+        shape.lineTo(0.6, -0.4);
+        shape.lineTo(0.6, -0.2);
+        shape.lineTo(-0.6, -0.2);
+        shape.lineTo(-0.6, -0.4);
+        
+        return new THREE.ShapeGeometry(shape);
+    }
+    
+    // Update existing floating icon
+    updateFloatingIcon(indicator, iconType, iconColor, backgroundColor) {
+        if (indicator.userData.iconType !== iconType) {
+            // Type changed, recreate icon
+            const newIcon = this.createFloatingIcon(iconType, iconColor, backgroundColor);
+            const position = indicator.position.clone();
+            const scale = indicator.scale.clone();
+            
+            this.mesh.remove(indicator);
+            if (indicator.geometry) indicator.geometry.dispose();
+            if (indicator.material) indicator.material.dispose();
+            
+            this.indicator = newIcon;
+            this.indicator.position.copy(position);
+            this.indicator.scale.copy(scale);
+            this.mesh.add(this.indicator);
+        } else {
+            // Same type, just update colors if needed
+            const background = indicator.children[0];
+            const icon = indicator.children[1];
+            if (background) background.material.color.set(backgroundColor);
+            if (icon) icon.material.color.set(iconColor);
+        }
+    }
+    
+    // Check collision with border trees
+    checkTreeCollisions(position) {
+        if (borderTrees.length === 0) return { hasCollision: false, closestTree: null };
+        
+        let closestTree = null;
+        let minDistance = Infinity;
+        let hasCollision = false;
+        
+        // Check collision with each border tree
+        for (let tree of borderTrees) {
+            const distance = position.distanceTo(tree.mesh.position);
+            const collisionDistance = this.size + 4; // Tree trunk radius + animal size
+            
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestTree = tree;
+            }
+            
+            if (distance < collisionDistance) {
+                hasCollision = true;
+            }
+        }
+        
+        return { hasCollision, closestTree, distance: minDistance };
+    }
+    
+    // Calculate bounce direction away from tree
+    calculateBounceDirection(tree) {
+        if (!tree) return this.targetDirection + Math.PI;
+        
+        // Calculate direction away from the tree
+        const directionAway = new THREE.Vector3();
+        directionAway.subVectors(this.mesh.position, tree.mesh.position);
+        directionAway.y = 0; // Keep on horizontal plane
+        directionAway.normalize();
+        
+        // Convert to angle with some randomness
+        const baseAngle = Math.atan2(directionAway.x, directionAway.z);
+        const randomOffset = (Math.random() - 0.5) * Math.PI * 0.5; // ±45 degrees
+        
+        return baseAngle + randomOffset;
+    }
+    
+    // Get direction to avoid nearby trees
+    getTreeAvoidanceDirection() {
+        if (borderTrees.length === 0) return null;
+        
+        const avoidanceRadius = this.size * 8; // Start avoiding when 8x animal size away
+        let avoidanceVector = new THREE.Vector3(0, 0, 0);
+        let treesNearby = 0;
+        
+        for (let tree of borderTrees) {
+            const distance = this.mesh.position.distanceTo(tree.mesh.position);
+            
+            if (distance < avoidanceRadius) {
+                // Calculate repulsion force (stronger when closer)
+                const repulsion = new THREE.Vector3();
+                repulsion.subVectors(this.mesh.position, tree.mesh.position);
+                repulsion.y = 0;
+                
+                if (repulsion.length() > 0) {
+                    repulsion.normalize();
+                    // Inverse square law for repulsion strength
+                    const strength = (avoidanceRadius - distance) / avoidanceRadius;
+                    repulsion.multiplyScalar(strength * strength);
+                    avoidanceVector.add(repulsion);
+                    treesNearby++;
+                }
+            }
+        }
+        
+        if (treesNearby === 0) return null;
+        
+        // Convert avoidance vector to angle
+        if (avoidanceVector.length() > 0) {
+            avoidanceVector.normalize();
+            return Math.atan2(avoidanceVector.x, avoidanceVector.z);
+        }
+        
+        return null;
     }
     
     // Called when eaten
@@ -816,8 +1164,17 @@ class TransactionAnimal {
     dispose() {
         if (this.indicator) {
             this.mesh.remove(this.indicator);
-            this.indicator.geometry.dispose();
-            this.indicator.material.dispose();
+            // Dispose of all parts of the floating icon
+            this.indicator.traverse((child) => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(mat => mat.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
         }
         
         this.mesh.traverse((child) => {
@@ -837,6 +1194,8 @@ class TransactionAnimal {
 let gardenElements = [];
 let animals = []; // Track animals separately for collision detection
 let plants = []; // Track plants separately for collision detection
+let borderTrees = []; // Persistent border trees that grow fruits
+let borderTreePositions = []; // Store border positions for new tree spawning
 
 // Create player animal
 function createPlayer() {
@@ -928,6 +1287,14 @@ function updatePlayerMovement(delta) {
     if (playerControls.moveLeft) moveVector.sub(right);
     if (playerControls.moveRight) moveVector.add(right);
     
+    // Handle rotation with Q and E keys
+    if (playerControls.rotateLeft) {
+        playerControls.rotation -= playerControls.rotationSpeed;
+    }
+    if (playerControls.rotateRight) {
+        playerControls.rotation += playerControls.rotationSpeed;
+    }
+    
     if (moveVector.length() > 0) {
         moveVector.normalize();
         moveVector.multiplyScalar(speed * delta);
@@ -963,6 +1330,36 @@ function checkCollisions() {
     const playerPos = playerControls.mesh.position;
     const playerRadius = playerControls.size;
     
+    // Check collisions with power-up fruits first
+    for (let i = powerUpFruits.length - 1; i >= 0; i--) {
+        const fruit = powerUpFruits[i];
+        const distance = playerPos.distanceTo(fruit.position);
+        
+        if (distance < playerRadius + 1.2) { // Power-up fruit collision
+            collectPowerUpFruit(fruit, i);
+        }
+    }
+    
+    // Check collisions with leverage fruits
+    for (let i = leverageFruits.length - 1; i >= 0; i--) {
+        const fruit = leverageFruits[i];
+        const distance = playerPos.distanceTo(fruit.position);
+        
+        if (distance < playerRadius + 1.5) { // Leverage fruit collision (slightly larger radius)
+            collectLeverageFruit(fruit, i);
+        }
+    }
+    
+    // Check collisions with speedrun fruits
+    for (let i = speedrunFruits.length - 1; i >= 0; i--) {
+        const fruit = speedrunFruits[i];
+        const distance = playerPos.distanceTo(fruit.position);
+        
+        if (distance < playerRadius + 1.4) { // Speedrun fruit collision
+            collectSpeedrunFruit(fruit, i);
+        }
+    }
+    
     // Check collisions with animals
     for (let i = animals.length - 1; i >= 0; i--) {
         const animal = animals[i];
@@ -970,28 +1367,27 @@ function checkCollisions() {
         const collisionDistance = playerRadius + animal.size;
         
         if (distance < collisionDistance) {
-            if (animal.size < playerControls.size * 0.8) {
-                // Eat smaller animal
+            if (animal.size < playerControls.size * 1.2) {
+                // Eat smaller and similar-sized animals (changed from 0.8 to 1.2)
                 eatAnimal(animal, i);
-            } else if (animal.size > playerControls.size * 1.2) {
-                // Eaten by larger animal - game over
-                handleGameOver();
+            } else {
+                // Eaten by larger animal - lose a life or game over
+                handlePlayerDeath();
                 return;
             }
-            // Similar size - just bounce off
         }
     }
     
-    // Check collisions with plants (obstacles, not deadly)
-    particles.forEach(plant => {
-        if (plant.mesh) {
-            const distance = playerPos.distanceTo(plant.mesh.position);
-            const collisionDistance = playerRadius + (plant.size || 1) * 0.5;
+    // Check collisions with border trees (obstacles, not deadly)
+    borderTrees.forEach(tree => {
+        if (tree.mesh) {
+            const distance = playerPos.distanceTo(tree.mesh.position);
+            const collisionDistance = playerRadius + 3; // Tree trunk radius
             
             if (distance < collisionDistance) {
-                // Push player away from plant
+                // Push player away from tree
                 const pushDirection = new THREE.Vector3()
-                    .subVectors(playerPos, plant.mesh.position)
+                    .subVectors(playerPos, tree.mesh.position)
                     .normalize();
                 playerControls.mesh.position.add(pushDirection.multiplyScalar(collisionDistance - distance));
             }
@@ -1002,10 +1398,10 @@ function checkCollisions() {
 // Handle eating an animal
 function eatAnimal(animal, index) {
     // Add to money collected
-    moneyCollected += animal.value;
+    moneyCollected += animal.amount;
     
     // Grow player size
-    const growthFactor = Math.log10(animal.value + 1) * 0.1;
+    const growthFactor = Math.log10(animal.amount + 1) * 0.1;
     playerControls.size = Math.min(playerControls.size + growthFactor, 10); // Max size of 10
     
     // Update player mesh scale
@@ -1014,7 +1410,6 @@ function eatAnimal(animal, index) {
     
     // Remove animal
     scene.remove(animal.mesh);
-    scene.remove(animal.indicator);
     animals.splice(index, 1);
     
     // Update UI
@@ -1022,6 +1417,307 @@ function eatAnimal(animal, index) {
     
     // Play eat sound effect (visual feedback)
     flashScreen(0x00ff00, 100);
+}
+
+// Handle collecting a power-up fruit
+function collectPowerUpFruit(fruit, index) {
+    // Add a life (up to maximum)
+    if (gameState.lives < gameState.maxLives) {
+        gameState.lives++;
+        console.log(`Life collected! Lives: ${gameState.lives}/${gameState.maxLives}`);
+    } else {
+        // Give bonus money instead if lives are maxed
+        moneyCollected += 1000;
+        console.log('Lives maxed! Received $1000 bonus instead!');
+    }
+    
+    // Remove fruit from scene and arrays
+    scene.remove(fruit);
+    fruit.geometry.dispose();
+    fruit.material.dispose();
+    powerUpFruits.splice(index, 1);
+    
+    // Update UI
+    updateStats();
+    
+    // Show collection effect
+    showLifeCollectionEffect(fruit.position);
+    
+    // Flash screen pink
+    flashScreen(0xFF69B4, 150);
+}
+
+// Collect leverage fruit and apply size effect
+function collectLeverageFruit(fruit, index) {
+    const currentTime = Date.now();
+    
+    // Check if this is within the double-eat window
+    let sizeMultiplier = 2.0;
+    if (currentTime - lastLeverageFruitEaten <= LEVERAGE_DOUBLE_EAT_WINDOW && leverageEaten === 1) {
+        sizeMultiplier = 4.0;
+        leverageEaten = 2;
+        console.log('DOUBLE EAT! 4x size boost activated!');
+    } else {
+        leverageEaten = 1;
+        console.log('Leverage fruit collected! 2x size boost activated!');
+    }
+    
+    // If leverage is already active, remove the current multiplier first
+    if (leverageActive) {
+        // Remove the current leverage effect to get back to natural size
+        playerControls.size = playerControls.size / currentLeverageMultiplier;
+    }
+    
+    // Apply the new size multiplier to the current natural size
+    currentLeverageMultiplier = sizeMultiplier;
+    playerControls.size = playerControls.size * currentLeverageMultiplier;
+    
+    // Update player mesh size
+    if (playerControls.mesh) {
+        playerControls.mesh.scale.setScalar(playerControls.size);
+        playerControls.mesh.position.y = playerControls.size * 0.5 - 30;
+    }
+    
+    // Set leverage state
+    leverageActive = true;
+    lastLeverageFruitEaten = currentTime;
+    
+    // Clear any existing timer
+    if (leverageEffectTimer) {
+        clearTimeout(leverageEffectTimer);
+    }
+    
+    // Set timer to reset size after effect duration
+    leverageEffectTimer = setTimeout(() => {
+        resetLeverageEffect();
+    }, LEVERAGE_EFFECT_DURATION);
+    
+    // Update all animal threat indicators since player size changed
+    updateAnimalIndicators();
+    
+    // Remove fruit from scene and arrays
+    scene.remove(fruit);
+    fruit.geometry.dispose();
+    fruit.material.dispose();
+    leverageFruits.splice(index, 1);
+    
+    // Show collection effect
+    showLeverageCollectionEffect(fruit.position, sizeMultiplier);
+    
+    // Flash screen gold
+    flashScreen(0xFFD700, 200);
+    
+    console.log(`Player size increased to ${playerControls.size.toFixed(1)} (${sizeMultiplier}x boost)`);
+}
+
+// Reset leverage effect back to normal size
+function resetLeverageEffect() {
+    if (leverageActive) {
+        // Remove the leverage multiplier to get back to natural size
+        playerControls.size = playerControls.size / currentLeverageMultiplier;
+        
+        // Update player mesh size
+        if (playerControls.mesh) {
+            playerControls.mesh.scale.setScalar(playerControls.size);
+            playerControls.mesh.position.y = playerControls.size * 0.5 - 30;
+        }
+        
+        leverageActive = false;
+        leverageEaten = 0;
+        leverageEffectTimer = null;
+        currentLeverageMultiplier = 1.0; // Reset multiplier
+        
+        // Update all animal threat indicators since player size changed
+        updateAnimalIndicators();
+        
+        console.log(`Leverage effect expired. Player size reset to ${playerControls.size.toFixed(1)}`);
+    }
+}
+
+// Show leverage collection visual effect
+function showLeverageCollectionEffect(position, multiplier) {
+    const effectGroup = new THREE.Group();
+    
+    // Create golden star particles
+    const particleCount = multiplier === 4.0 ? 12 : 8; // More particles for 4x effect
+    for (let i = 0; i < particleCount; i++) {
+        const starGeometry = new THREE.ConeGeometry(0.4, 0.8, 6);
+        const starMaterial = new THREE.MeshBasicMaterial({
+            color: 0xFFD700,
+            emissive: 0xFF8C00,
+            emissiveIntensity: 0.8,
+            transparent: true,
+            opacity: 0.95
+        });
+        const star = new THREE.Mesh(starGeometry, starMaterial);
+        
+        star.position.set(
+            (Math.random() - 0.5) * 4,
+            Math.random() * 2 + 1,
+            (Math.random() - 0.5) * 4
+        );
+        
+        // Random rotation for star effect
+        star.rotation.set(
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+            Math.random() * Math.PI
+        );
+        
+        effectGroup.add(star);
+    }
+    
+    effectGroup.position.copy(position);
+    scene.add(effectGroup);
+    
+    // Animate the leverage collection effect
+    let animationTime = 0;
+    const animateCollection = () => {
+        animationTime += 0.04;
+        
+        effectGroup.children.forEach((star, idx) => {
+            star.position.y += 0.5;
+            star.material.opacity -= 0.04;
+            star.rotation.y += 0.4;
+            star.rotation.x += 0.2;
+            star.scale.multiplyScalar(multiplier === 4.0 ? 1.02 : 1.01); // Grow faster for 4x effect
+        });
+        
+        if (animationTime < 1 && effectGroup.children.length > 0) {
+            requestAnimationFrame(animateCollection);
+        } else {
+            scene.remove(effectGroup);
+            effectGroup.children.forEach(child => {
+                child.geometry.dispose();
+                child.material.dispose();
+            });
+        }
+    };
+    
+    animateCollection();
+}
+
+// Update animal threat indicators when player size changes
+function updateAnimalIndicators() {
+    // This will be called to refresh all animal indicators
+    // The indicator logic in the main animation loop will handle the actual updates
+    console.log('Updating animal threat indicators for new player size');
+}
+
+// Show life collection visual effect
+function showLifeCollectionEffect(position) {
+    const effectGroup = new THREE.Group();
+    
+    // Create heart particles
+    for (let i = 0; i < 8; i++) {
+        const heartGeometry = new THREE.SphereGeometry(0.3, 6, 4);
+        const heartMaterial = new THREE.MeshBasicMaterial({
+            color: 0xFF69B4,
+            transparent: true,
+            opacity: 0.9
+        });
+        const heart = new THREE.Mesh(heartGeometry, heartMaterial);
+        
+        const angle = (i / 8) * Math.PI * 2;
+        heart.position.set(
+            Math.cos(angle) * 2,
+            position.y,
+            Math.sin(angle) * 2
+        );
+        
+        effectGroup.add(heart);
+    }
+    
+    scene.add(effectGroup);
+    
+    // Animate the effect
+    let animationTime = 0;
+    const animateEffect = () => {
+        animationTime += 0.02;
+        
+        effectGroup.children.forEach((heart, index) => {
+            heart.position.y += 0.2;
+            heart.material.opacity -= 0.02;
+            heart.rotation.y += 0.1;
+            
+            // Spiral outward
+            const angle = (index / 8) * Math.PI * 2 + animationTime * 2;
+            const radius = 2 + animationTime * 3;
+            heart.position.x = Math.cos(angle) * radius;
+            heart.position.z = Math.sin(angle) * radius;
+        });
+        
+        if (animationTime < 1) {
+            requestAnimationFrame(animateEffect);
+        } else {
+            scene.remove(effectGroup);
+            effectGroup.children.forEach(child => {
+                child.geometry.dispose();
+                child.material.dispose();
+            });
+        }
+    };
+    
+    animateEffect();
+}
+
+// Handle player death (lose a life or game over)
+function handlePlayerDeath() {
+    gameState.lives--;
+    
+    if (gameState.lives > 0) {
+        // Player has lives left - respawn
+        console.log(`Player died! Lives remaining: ${gameState.lives}`);
+        
+        // Flash screen red
+        flashScreen(0xFF0000, 200);
+        
+        // Reset player position to center
+        playerControls.mesh.position.set(0, playerControls.size * 0.5 - 30, 0);
+        playerControls.velocity.set(0, 0, 0);
+        
+        // Show death notification
+        showDeathNotification();
+        
+        updateStats();
+    } else {
+        // No lives left - game over
+        handleGameOver();
+    }
+}
+
+// Show death notification
+function showDeathNotification() {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: linear-gradient(135deg, #FF4444, #CC0000);
+        color: white;
+        padding: 20px 30px;
+        border-radius: 15px;
+        font-size: 20px;
+        font-weight: bold;
+        z-index: 2000;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(255, 68, 68, 0.4);
+    `;
+    notification.innerHTML = `
+        <div>💀 EATEN! 💀</div>
+        <div style="margin-top: 10px; font-size: 16px;">Lives Remaining: ${gameState.lives}</div>
+        <div style="margin-top: 5px; font-size: 14px;">Respawning...</div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Remove notification after 2 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            document.body.removeChild(notification);
+        }
+    }, 2000);
 }
 
 // Flash screen effect
@@ -1163,6 +1859,9 @@ function init() {
     
     // Create garden elements
     createGardenElements();
+    
+    // Create initial border trees
+    createInitialBorderTrees();
     
     // Handle window resize
     window.addEventListener('resize', onWindowResize);
@@ -1327,6 +2026,1297 @@ function createGardenPath() {
     }
 }
 
+// Create initial border trees around the perimeter
+function createInitialBorderTrees() {
+    borderTrees = [];
+    borderTreePositions = [];
+    
+    for (let i = 0; i < INITIAL_BORDER_TREES; i++) {
+        const angle = (i / INITIAL_BORDER_TREES) * Math.PI * 2;
+        const radius = GARDEN_RADIUS + Math.random() * 10; // Some variation in distance
+        
+        const position = {
+            x: Math.cos(angle) * radius,
+            z: Math.sin(angle) * radius,
+            y: -30
+        };
+        
+        // Create border tree
+        const tree = createBorderTree(position, 'neutral');
+        borderTrees.push(tree);
+        borderTreePositions.push(position);
+        scene.add(tree.mesh);
+    }
+    
+    console.log(`Created ${INITIAL_BORDER_TREES} initial border trees`);
+}
+
+// Create a border tree (enhanced version of createTree)
+function createBorderTree(position, stablecoin = 'neutral') {
+    const tree = {
+        mesh: new THREE.Group(),
+        position: position,
+        fruits: [], // Array to hold fruits
+        stablecoin: stablecoin,
+        createdAt: Date.now()
+    };
+    
+    tree.mesh.position.set(position.x, position.y, position.z);
+    
+    // Trunk - larger for border trees
+    const trunkGeometry = new THREE.CylinderGeometry(2, 3, 12);
+    const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+    trunk.position.y = 6;
+    trunk.castShadow = true;
+    tree.mesh.add(trunk);
+    
+    // Foliage - multiple layers for fuller look
+    const foliageColors = [0x228B22, 0x32CD32, 0x3CB371, 0x90EE90];
+    for (let i = 0; i < 4; i++) {
+        const radius = 6 + Math.random() * 3;
+        const foliageGeometry = new THREE.SphereGeometry(radius, 12, 8);
+        const foliageMaterial = new THREE.MeshLambertMaterial({ 
+            color: foliageColors[i]
+        });
+        const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial);
+        foliage.position.set(
+            (Math.random() - 0.5) * 4,
+            12 + i * 2,
+            (Math.random() - 0.5) * 4
+        );
+        foliage.castShadow = true;
+        tree.mesh.add(foliage);
+    }
+    
+    // Add some initial fruits if not neutral
+    if (stablecoin !== 'neutral') {
+        addFruitToTree(tree, stablecoin, 1000);
+    }
+    
+    return tree;
+}
+
+// Add fruit to a specific tree
+function addFruitToTree(tree, stablecoin, amount) {
+    // Create fruit based on stablecoin type
+    const fruitColor = STABLECOIN_COLORS[stablecoin] || 0xFFFFFF;
+    
+    // Size based on amount (but keep reasonable)
+    const size = Math.min(Math.max(Math.log10(amount + 1) * 0.2, 0.3), 1.5);
+    
+    const fruitGeometry = new THREE.SphereGeometry(size, 8, 6);
+    const fruitMaterial = new THREE.MeshPhongMaterial({
+        color: fruitColor,
+        emissive: fruitColor,
+        emissiveIntensity: 0.3
+    });
+    const fruit = new THREE.Mesh(fruitGeometry, fruitMaterial);
+    
+    // Random position in tree crown
+    const angle = Math.random() * Math.PI * 2;
+    const height = 12 + Math.random() * 8; // In the foliage area
+    const radius = Math.random() * 6;
+    
+    fruit.position.set(
+        Math.cos(angle) * radius,
+        height,
+        Math.sin(angle) * radius
+    );
+    
+    // Add fruit data
+    fruit.userData = {
+        stablecoin: stablecoin,
+        amount: amount,
+        createdAt: Date.now()
+    };
+    
+    tree.mesh.add(fruit);
+    tree.fruits.push(fruit);
+    
+    // Limit fruits per tree to prevent overcrowding
+    if (tree.fruits.length > 20) {
+        const oldestFruit = tree.fruits.shift();
+        tree.mesh.remove(oldestFruit);
+        oldestFruit.geometry.dispose();
+        oldestFruit.material.dispose();
+    }
+}
+
+// Add fruit to a random existing border tree
+function addFruitToRandomTree(stablecoin, amount) {
+    if (borderTrees.length === 0) return;
+    
+    const randomTree = borderTrees[Math.floor(Math.random() * borderTrees.length)];
+    addFruitToTree(randomTree, stablecoin, amount);
+}
+
+// Create new border tree for massive transactions
+function createNewBorderTree(stablecoin, amount) {
+    // Find a position on the border that's not too close to existing trees
+    let attempts = 0;
+    let position;
+    
+    do {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = GARDEN_RADIUS + Math.random() * 10;
+        position = {
+            x: Math.cos(angle) * radius,
+            z: Math.sin(angle) * radius,
+            y: -30
+        };
+        
+        attempts++;
+    } while (attempts < 20 && isTooCloseToExistingTree(position, 8));
+    
+    // Create the new tree
+    const tree = createBorderTree(position, stablecoin);
+    
+    // Add extra fruits for the massive transaction
+    const fruitCount = Math.min(Math.floor(amount / 5000), 5);
+    for (let i = 0; i < fruitCount; i++) {
+        addFruitToTree(tree, stablecoin, amount);
+    }
+    
+    borderTrees.push(tree);
+    borderTreePositions.push(position);
+    scene.add(tree.mesh);
+    
+    console.log(`Created new border tree for massive transaction: $${amount} ${stablecoin}`);
+}
+
+// Check if position is too close to existing trees
+function isTooCloseToExistingTree(newPosition, minDistance) {
+    return borderTreePositions.some(existingPos => {
+        const distance = Math.sqrt(
+            Math.pow(newPosition.x - existingPos.x, 2) + 
+            Math.pow(newPosition.z - existingPos.z, 2)
+        );
+        return distance < minDistance;
+    });
+}
+
+// Create a power-up fruit (life fruit)
+function createPowerUpFruit() {
+    // Check if we've reached the maximum number of power-up fruits
+    if (powerUpFruits.length >= MAX_POWER_UP_FRUITS) {
+        console.log('Maximum power-up fruits reached, skipping spawn');
+        return;
+    }
+    
+    if (borderTrees.length === 0) return;
+    
+    // Find a good spawn position that's not too close to existing fruits
+    const spawnPosition = findOptimalPowerUpSpawnPosition();
+    if (!spawnPosition) {
+        console.log('Could not find suitable spawn position for power-up fruit');
+        return;
+    }
+    
+    // Create special power-up fruit
+    const powerUpGeometry = new THREE.SphereGeometry(1.0, 12, 8);
+    const powerUpMaterial = new THREE.MeshPhongMaterial({
+        color: 0xFF69B4, // Pink/magenta color for life fruit
+        emissive: 0xFF1493,
+        emissiveIntensity: 0.6,
+        transparent: true,
+        opacity: 1.0
+    });
+    
+    const powerUpFruit = new THREE.Mesh(powerUpGeometry, powerUpMaterial);
+    
+    // Start position high above the spawn point
+    powerUpFruit.position.set(
+        spawnPosition.x,
+        spawnPosition.y + 20, // Start 20 units above ground
+        spawnPosition.z
+    );
+    
+    // Add special properties including physics
+    powerUpFruit.userData = {
+        isPowerUp: true,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + POWER_UP_LIFETIME,
+        originalEmissiveIntensity: 0.6,
+        glowing: false,
+        velocity: new THREE.Vector3(0, 0, 0),
+        targetGroundY: spawnPosition.y,
+        onGround: false,
+        bounces: 0
+    };
+    
+    // Add to scene directly (not to tree)
+    scene.add(powerUpFruit);
+    powerUpFruits.push(powerUpFruit);
+    
+    console.log('Power-up fruit spawned! It will fall to the ground.');
+    
+    // Show notification
+    showPowerUpNotification();
+}
+
+// Find optimal spawn position for power-up fruit
+function findOptimalPowerUpSpawnPosition() {
+    const maxAttempts = 50;
+    let attempts = 0;
+    
+    while (attempts < maxAttempts) {
+        // Random position within the garden area
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 20 + Math.random() * 50; // Between inner area and border
+        
+        const candidatePosition = {
+            x: Math.cos(angle) * radius,
+            y: -29, // Ground level
+            z: Math.sin(angle) * radius
+        };
+        
+        // Check distance from existing power-up fruits
+        let tooClose = false;
+        for (let fruit of powerUpFruits) {
+            const distance = Math.sqrt(
+                Math.pow(candidatePosition.x - fruit.position.x, 2) +
+                Math.pow(candidatePosition.z - fruit.position.z, 2)
+            );
+            
+            if (distance < MIN_POWER_UP_DISTANCE) {
+                tooClose = true;
+                break;
+            }
+        }
+        
+        // Check distance from border trees (don't spawn too close)
+        for (let tree of borderTrees) {
+            const distance = Math.sqrt(
+                Math.pow(candidatePosition.x - tree.mesh.position.x, 2) +
+                Math.pow(candidatePosition.z - tree.mesh.position.z, 2)
+            );
+            
+            if (distance < 8) { // Too close to tree
+                tooClose = true;
+                break;
+            }
+        }
+        
+        if (!tooClose) {
+            return candidatePosition;
+        }
+        
+        attempts++;
+    }
+    
+    return null; // Could not find suitable position
+}
+
+// Create a leverage fruit (size doubling fruit)
+function createLeverageFruit() {
+    // Check if we've reached the maximum number of leverage fruits
+    if (leverageFruits.length >= MAX_LEVERAGE_FRUITS) {
+        console.log('Maximum leverage fruits reached, skipping spawn');
+        return;
+    }
+    
+    // Find a good spawn position
+    const spawnPosition = findOptimalLeverageFruitSpawnPosition();
+    if (!spawnPosition) {
+        console.log('Could not find suitable spawn position for leverage fruit');
+        return;
+    }
+    
+    // Create special leverage fruit (different color/style from life fruit)
+    const leverageGeometry = new THREE.SphereGeometry(1.2, 16, 12);
+    const leverageMaterial = new THREE.MeshPhongMaterial({
+        color: 0xFFD700, // Gold color for leverage fruit
+        emissive: 0xFF8C00, // Orange glow
+        emissiveIntensity: 0.8,
+        transparent: true,
+        opacity: 1.0
+    });
+    
+    const leverageFruit = new THREE.Mesh(leverageGeometry, leverageMaterial);
+    
+    // Start position high above the spawn point
+    leverageFruit.position.set(
+        spawnPosition.x,
+        spawnPosition.y + 25, // Start higher than life fruits
+        spawnPosition.z
+    );
+    
+    // Add special properties
+    leverageFruit.userData = {
+        isLeverageFruit: true,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + LEVERAGE_FRUIT_LIFETIME,
+        originalEmissiveIntensity: 0.8,
+        glowing: false,
+        velocity: new THREE.Vector3(0, 0, 0),
+        targetGroundY: spawnPosition.y,
+        onGround: false,
+        bounces: 0
+    };
+    
+    // Add to scene directly
+    scene.add(leverageFruit);
+    leverageFruits.push(leverageFruit);
+    
+    console.log('Leverage fruit spawned! Collect it to double your size!');
+    
+    // Show notification
+    showLeverageFruitNotification();
+}
+
+// Find optimal spawn position for leverage fruit
+function findOptimalLeverageFruitSpawnPosition() {
+    const maxAttempts = 50;
+    let attempts = 0;
+    
+    while (attempts < maxAttempts) {
+        // Random position within the garden area
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 25 + Math.random() * 45; // Slightly different area from life fruits
+        
+        const candidatePosition = {
+            x: Math.cos(angle) * radius,
+            y: -29, // Ground level
+            z: Math.sin(angle) * radius
+        };
+        
+        // Check distance from existing leverage fruits
+        let tooClose = false;
+        for (let fruit of leverageFruits) {
+            const distance = Math.sqrt(
+                Math.pow(candidatePosition.x - fruit.position.x, 2) +
+                Math.pow(candidatePosition.z - fruit.position.z, 2)
+            );
+            
+            if (distance < 25) { // Larger minimum distance for leverage fruits
+                tooClose = true;
+                break;
+            }
+        }
+        
+        // Check distance from power-up fruits (don't spawn too close)
+        for (let fruit of powerUpFruits) {
+            const distance = Math.sqrt(
+                Math.pow(candidatePosition.x - fruit.position.x, 2) +
+                Math.pow(candidatePosition.z - fruit.position.z, 2)
+            );
+            
+            if (distance < 15) {
+                tooClose = true;
+                break;
+            }
+        }
+        
+        // Check distance from border trees
+        for (let tree of borderTrees) {
+            const distance = Math.sqrt(
+                Math.pow(candidatePosition.x - tree.mesh.position.x, 2) +
+                Math.pow(candidatePosition.z - tree.mesh.position.z, 2)
+            );
+            
+            if (distance < 10) {
+                tooClose = true;
+                break;
+            }
+        }
+        
+        if (!tooClose) {
+            return candidatePosition;
+        }
+        
+        attempts++;
+    }
+    
+    return null;
+}
+
+// Show leverage fruit notification
+function showLeverageFruitNotification() {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        background: linear-gradient(135deg, #FFD700, #FF8C00);
+        color: black;
+        padding: 15px 25px;
+        border-radius: 10px;
+        font-size: 16px;
+        font-weight: bold;
+        z-index: 1000;
+        animation: slideInLeft 0.5s ease-out;
+        box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4);
+        border: 2px solid #FF8C00;
+    `;
+    notification.textContent = '⚡ Leverage Fruit Spawned! Double your size!';
+    
+    // Add CSS animation
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideInLeft {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    document.body.appendChild(notification);
+    
+    // Remove notification after 4 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.animation = 'slideInLeft 0.5s ease-in reverse';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    document.body.removeChild(notification);
+                }
+                if (style.parentNode) {
+                    document.head.removeChild(style);
+                }
+            }, 500);
+        }
+    }, 4000);
+}
+
+// Show power-up notification
+function showPowerUpNotification() {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #FF69B4, #FF1493);
+        color: white;
+        padding: 15px 25px;
+        border-radius: 10px;
+        font-size: 16px;
+        font-weight: bold;
+        z-index: 1000;
+        animation: slideIn 0.5s ease-out;
+        box-shadow: 0 5px 20px rgba(255, 105, 180, 0.4);
+    `;
+    notification.textContent = '💖 Life Fruit Spawned! Find the glowing fruit!';
+    
+    // Add CSS animation
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    document.body.appendChild(notification);
+    
+    // Remove notification after 4 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.animation = 'slideIn 0.5s ease-in reverse';
+            setTimeout(() => {
+                document.body.removeChild(notification);
+                document.head.removeChild(style);
+            }, 500);
+        }
+    }, 4000);
+}
+
+// Create a speedrun fruit (speed doubling fruit)
+function createSpeedrunFruit() {
+    // Check if we've reached the maximum number of speedrun fruits
+    if (speedrunFruits.length >= MAX_SPEEDRUN_FRUITS) {
+        console.log('Maximum speedrun fruits reached, skipping spawn');
+        return;
+    }
+    
+    // Find a good spawn position
+    const spawnPosition = findOptimalSpeedrunFruitSpawnPosition();
+    if (!spawnPosition) {
+        console.log('Could not find suitable spawn position for speedrun fruit');
+        return;
+    }
+    
+    // Create special speedrun fruit (electric blue/cyan color for speed)
+    const speedrunGeometry = new THREE.SphereGeometry(1.1, 12, 10);
+    const speedrunMaterial = new THREE.MeshPhongMaterial({
+        color: 0x00FFFF, // Cyan color for speedrun fruit
+        emissive: 0x0088FF, // Electric blue glow
+        emissiveIntensity: 0.9,
+        transparent: true,
+        opacity: 1.0
+    });
+    
+    const speedrunFruit = new THREE.Mesh(speedrunGeometry, speedrunMaterial);
+    
+    // Start position high above the spawn point
+    speedrunFruit.position.set(
+        spawnPosition.x,
+        spawnPosition.y + 23, // Start high
+        spawnPosition.z
+    );
+    
+    // Add special properties
+    speedrunFruit.userData = {
+        isSpeedrunFruit: true,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + SPEEDRUN_FRUIT_LIFETIME,
+        originalEmissiveIntensity: 0.9,
+        glowing: false,
+        velocity: new THREE.Vector3(0, 0, 0),
+        targetGroundY: spawnPosition.y,
+        onGround: false,
+        bounces: 0
+    };
+    
+    // Add to scene directly
+    scene.add(speedrunFruit);
+    speedrunFruits.push(speedrunFruit);
+    
+    console.log('Speedrun fruit spawned! Collect it to double your speed!');
+    
+    // Show notification
+    showSpeedrunFruitNotification();
+}
+
+// Find optimal spawn position for speedrun fruit
+function findOptimalSpeedrunFruitSpawnPosition() {
+    const maxAttempts = 50;
+    let attempts = 0;
+    
+    while (attempts < maxAttempts) {
+        // Random position within the garden area (different area from other fruits)
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 35 + Math.random() * 40; // Different spawn area
+        
+        const candidatePosition = {
+            x: Math.cos(angle) * radius,
+            y: -29, // Ground level
+            z: Math.sin(angle) * radius
+        };
+        
+        // Check distance from existing speedrun fruits
+        let tooClose = false;
+        for (let fruit of speedrunFruits) {
+            const distance = Math.sqrt(
+                Math.pow(candidatePosition.x - fruit.position.x, 2) +
+                Math.pow(candidatePosition.z - fruit.position.z, 2)
+            );
+            
+            if (distance < 30) { // Large minimum distance for speedrun fruits
+                tooClose = true;
+                break;
+            }
+        }
+        
+        // Check distance from leverage fruits (don't spawn too close)
+        for (let fruit of leverageFruits) {
+            const distance = Math.sqrt(
+                Math.pow(candidatePosition.x - fruit.position.x, 2) +
+                Math.pow(candidatePosition.z - fruit.position.z, 2)
+            );
+            
+            if (distance < 20) {
+                tooClose = true;
+                break;
+            }
+        }
+        
+        // Check distance from power-up fruits (don't spawn too close)
+        for (let fruit of powerUpFruits) {
+            const distance = Math.sqrt(
+                Math.pow(candidatePosition.x - fruit.position.x, 2) +
+                Math.pow(candidatePosition.z - fruit.position.z, 2)
+            );
+            
+            if (distance < 15) {
+                tooClose = true;
+                break;
+            }
+        }
+        
+        // Check distance from border trees
+        for (let tree of borderTrees) {
+            const distance = Math.sqrt(
+                Math.pow(candidatePosition.x - tree.mesh.position.x, 2) +
+                Math.pow(candidatePosition.z - tree.mesh.position.z, 2)
+            );
+            
+            if (distance < 10) {
+                tooClose = true;
+                break;
+            }
+        }
+        
+        if (!tooClose) {
+            return candidatePosition;
+        }
+        
+        attempts++;
+    }
+    
+    return null;
+}
+
+// Show speedrun fruit notification
+function showSpeedrunFruitNotification() {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 80px;
+        left: 20px;
+        background: linear-gradient(135deg, #00FFFF, #0088FF);
+        color: black;
+        padding: 15px 25px;
+        border-radius: 10px;
+        font-size: 16px;
+        font-weight: bold;
+        z-index: 1000;
+        animation: slideInLeft 0.5s ease-out;
+        box-shadow: 0 5px 20px rgba(0, 255, 255, 0.4);
+        border: 2px solid #0088FF;
+    `;
+    notification.textContent = '⚡ Speedrun Fruit Spawned! Double your speed!';
+    
+    // Add CSS animation
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideInLeft {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    document.body.appendChild(notification);
+    
+    // Remove notification after 4 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.animation = 'slideInLeft 0.5s ease-in reverse';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    document.body.removeChild(notification);
+                }
+                if (style.parentNode) {
+                    document.head.removeChild(style);
+                }
+            }, 500);
+        }
+    }, 4000);
+}
+
+// Update speedrun fruits (physics, expiration, collection)
+function updateSpeedrunFruits() {
+    const currentTime = Date.now();
+    const time = currentTime * 0.001;
+    
+    for (let i = speedrunFruits.length - 1; i >= 0; i--) {
+        const fruit = speedrunFruits[i];
+        
+        // Check expiration
+        if (currentTime > fruit.userData.expiresAt) {
+            console.log('Speedrun fruit expired!');
+            createSpeedrunExpirationEffect(fruit.position);
+            scene.remove(fruit);
+            fruit.geometry.dispose();
+            fruit.material.dispose();
+            speedrunFruits.splice(i, 1);
+            continue;
+        }
+        
+        // Update physics if not on ground
+        if (!fruit.userData.onGround) {
+            // Apply gravity
+            fruit.userData.velocity.y -= 0.5;
+            
+            // Apply velocity
+            fruit.position.add(fruit.userData.velocity);
+            
+            // Check ground collision
+            if (fruit.position.y <= fruit.userData.targetGroundY) {
+                fruit.position.y = fruit.userData.targetGroundY;
+                
+                // Bounce effect
+                if (fruit.userData.bounces < 2) {
+                    fruit.userData.velocity.y = Math.abs(fruit.userData.velocity.y) * 0.4;
+                    fruit.userData.bounces++;
+                } else {
+                    fruit.userData.velocity.y = 0;
+                    fruit.userData.onGround = true;
+                    console.log('Speedrun fruit landed on ground');
+                }
+            }
+        }
+        
+        // Special electric blue glowing effects for speedrun fruit
+        const timeRemaining = fruit.userData.expiresAt - currentTime;
+        const urgencyFactor = 1 - (timeRemaining / SPEEDRUN_FRUIT_LIFETIME);
+        
+        if (playerControls.mesh && playerControls.isPlaying) {
+            const distance = playerControls.mesh.position.distanceTo(fruit.position);
+            
+            // Base electric blue glow that increases as expiration approaches
+            let baseIntensity = fruit.userData.originalEmissiveIntensity + urgencyFactor * 0.5;
+            
+            // Enhanced electric glow when player is near
+            if (distance < POWER_UP_GLOW_RADIUS) {
+                if (!fruit.userData.glowing) {
+                    fruit.userData.glowing = true;
+                    console.log('Speedrun fruit is glowing - speed boost awaits!');
+                }
+                
+                // Intense electric pulsing glow
+                const intensity = baseIntensity + Math.sin(time * 12) * 0.6;
+                fruit.material.emissiveIntensity = Math.min(intensity, 1.6);
+                
+                // Scale pulsing with electric effect
+                const scale = 1.05 + Math.sin(time * 10) * 0.35;
+                fruit.scale.setScalar(scale);
+                
+            } else {
+                if (fruit.userData.glowing) {
+                    fruit.userData.glowing = false;
+                }
+                
+                // Normal electric glow with urgency
+                const intensity = baseIntensity + Math.sin(time * 4) * 0.25;
+                fruit.material.emissiveIntensity = intensity;
+                
+                // Gentle scale animation
+                const scale = 1.0 + Math.sin(time * 5) * 0.12;
+                fruit.scale.setScalar(scale);
+            }
+            
+            // Urgent electric flashing when about to expire (last 8 seconds)
+            if (timeRemaining < 8000) {
+                const flashRate = Math.max(0.2, timeRemaining / 8000);
+                const flash = Math.sin(time * (15 / flashRate)) > 0 ? 2.2 : 0.3;
+                fruit.material.emissiveIntensity = flash;
+                
+                // Urgent scaling with electric intensity
+                const urgentScale = 1.4 + Math.sin(time * 12) * 0.6;
+                fruit.scale.setScalar(urgentScale);
+            }
+        }
+        
+        // Gentle floating animation when on ground with electric sparkle
+        if (fruit.userData.onGround) {
+            fruit.position.y = fruit.userData.targetGroundY + Math.sin(time * 4 + fruit.userData.createdAt * 0.001) * 0.6;
+            
+            // Add rapid rotation for electric energy effect
+            fruit.rotation.y += 0.05;
+            fruit.rotation.x += 0.02;
+        }
+    }
+}
+
+// Create expiration effect when speedrun fruit disappears
+function createSpeedrunExpirationEffect(position) {
+    const effectGroup = new THREE.Group();
+    effectGroup.position.copy(position);
+    
+    // Create electric blue lightning particles
+    for (let i = 0; i < 18; i++) {
+        const lightningGeometry = new THREE.CylinderGeometry(0.1, 0.3, 1.2, 6);
+        const lightningMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00FFFF,
+            emissive: 0x0088FF,
+            emissiveIntensity: 1.0,
+            transparent: true,
+            opacity: 0.95
+        });
+        const lightning = new THREE.Mesh(lightningGeometry, lightningMaterial);
+        
+        lightning.position.set(
+            (Math.random() - 0.5) * 5,
+            Math.random() * 3.5,
+            (Math.random() - 0.5) * 5
+        );
+        
+        // Random rotation for lightning effect
+        lightning.rotation.set(
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+            Math.random() * Math.PI
+        );
+        
+        effectGroup.add(lightning);
+    }
+    
+    scene.add(effectGroup);
+    
+    // Animate the electric expiration effect
+    let animationTime = 0;
+    const animateExpiration = () => {
+        animationTime += 0.03;
+        
+        effectGroup.children.forEach((lightning) => {
+            lightning.position.y += 0.5;
+            lightning.material.opacity -= 0.03;
+            lightning.material.emissiveIntensity -= 0.04;
+            lightning.rotation.y += 0.4;
+            lightning.scale.multiplyScalar(0.98);
+        });
+        
+        if (animationTime < 1.0 && effectGroup.children.length > 0) {
+            requestAnimationFrame(animateExpiration);
+        } else {
+            scene.remove(effectGroup);
+            effectGroup.children.forEach(child => {
+                child.geometry.dispose();
+                child.material.dispose();
+            });
+        }
+    };
+    
+    animateExpiration();
+}
+
+// Collect speedrun fruit and apply speed effect
+function collectSpeedrunFruit(fruit, index) {
+    const currentTime = Date.now();
+    
+    // Check if this is within the double-eat window
+    let speedMultiplier = 2.0;
+    if (currentTime - lastSpeedrunFruitEaten <= SPEEDRUN_DOUBLE_EAT_WINDOW && speedrunEaten === 1) {
+        speedMultiplier = 4.0;
+        speedrunEaten = 2;
+        console.log('DOUBLE EAT! 4x speed boost activated!');
+    } else {
+        speedrunEaten = 1;
+        console.log('Speedrun fruit collected! 2x speed boost activated!');
+    }
+    
+    // Store original speed if this is the first speedrun effect
+    if (!speedrunActive) {
+        originalPlayerSpeed = playerControls.speed;
+    }
+    
+    // Apply speed multiplier
+    playerControls.speed = originalPlayerSpeed * speedMultiplier;
+    
+    // Set speedrun state
+    speedrunActive = true;
+    lastSpeedrunFruitEaten = currentTime;
+    
+    // Clear any existing timer
+    if (speedrunEffectTimer) {
+        clearTimeout(speedrunEffectTimer);
+    }
+    
+    // Set timer to reset speed after effect duration
+    speedrunEffectTimer = setTimeout(() => {
+        resetSpeedrunEffect();
+    }, SPEEDRUN_EFFECT_DURATION);
+    
+    // Remove fruit from scene and arrays
+    scene.remove(fruit);
+    fruit.geometry.dispose();
+    fruit.material.dispose();
+    speedrunFruits.splice(index, 1);
+    
+    // Show collection effect
+    showSpeedrunCollectionEffect(fruit.position, speedMultiplier);
+    
+    // Flash screen cyan
+    flashScreen(0x00FFFF, 180);
+    
+    console.log(`Player speed increased to ${playerControls.speed.toFixed(1)} (${speedMultiplier}x boost)`);
+}
+
+// Reset speedrun effect back to normal speed
+function resetSpeedrunEffect() {
+    if (speedrunActive) {
+        playerControls.speed = originalPlayerSpeed;
+        
+        speedrunActive = false;
+        speedrunEaten = 0;
+        speedrunEffectTimer = null;
+        
+        console.log(`Speedrun effect expired. Player speed reset to ${playerControls.speed.toFixed(1)}`);
+    }
+}
+
+// Show speedrun collection visual effect
+function showSpeedrunCollectionEffect(position, multiplier) {
+    const effectGroup = new THREE.Group();
+    
+    // Create electric lightning bolt particles
+    const particleCount = multiplier === 4.0 ? 16 : 10; // More particles for 4x effect
+    for (let i = 0; i < particleCount; i++) {
+        const boltGeometry = new THREE.CylinderGeometry(0.2, 0.1, 1.5, 6);
+        const boltMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00FFFF,
+            emissive: 0x0088FF,
+            emissiveIntensity: 1.0,
+            transparent: true,
+            opacity: 0.9
+        });
+        const bolt = new THREE.Mesh(boltGeometry, boltMaterial);
+        
+        bolt.position.set(
+            (Math.random() - 0.5) * 4,
+            Math.random() * 2.5 + 1,
+            (Math.random() - 0.5) * 4
+        );
+        
+        // Random rotation for electric effect
+        bolt.rotation.set(
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+            Math.random() * Math.PI
+        );
+        
+        effectGroup.add(bolt);
+    }
+    
+    effectGroup.position.copy(position);
+    scene.add(effectGroup);
+    
+    // Animate the speedrun collection effect
+    let animationTime = 0;
+    const animateCollection = () => {
+        animationTime += 0.05;
+        
+        effectGroup.children.forEach((bolt) => {
+            bolt.position.y += 0.6;
+            bolt.material.opacity -= 0.05;
+            bolt.rotation.y += 0.5;
+            bolt.rotation.x += 0.3;
+            bolt.scale.multiplyScalar(multiplier === 4.0 ? 1.03 : 1.015); // Grow faster for 4x effect
+        });
+        
+        if (animationTime < 0.9 && effectGroup.children.length > 0) {
+            requestAnimationFrame(animateCollection);
+        } else {
+            scene.remove(effectGroup);
+            effectGroup.children.forEach(child => {
+                child.geometry.dispose();
+                child.material.dispose();
+            });
+        }
+    };
+    
+    animateCollection();
+}
+
+// Update power-up fruits (physics, expiration, glowing effects)
+function updatePowerUpFruits() {
+    const currentTime = Date.now();
+    const time = currentTime * 0.001;
+    
+    // Remove expired fruits first
+    for (let i = powerUpFruits.length - 1; i >= 0; i--) {
+        const fruit = powerUpFruits[i];
+        
+        if (currentTime > fruit.userData.expiresAt) {
+            // Create expiration effect
+            createExpirationEffect(fruit.position);
+            
+            // Remove fruit
+            scene.remove(fruit);
+            fruit.geometry.dispose();
+            fruit.material.dispose();
+            powerUpFruits.splice(i, 1);
+            
+            console.log('Power-up fruit expired and disappeared');
+            continue;
+        }
+        
+        // Update physics if not on ground
+        if (!fruit.userData.onGround) {
+            // Apply gravity
+            fruit.userData.velocity.y -= 0.5;
+            
+            // Apply velocity
+            fruit.position.add(fruit.userData.velocity);
+            
+            // Check ground collision
+            if (fruit.position.y <= fruit.userData.targetGroundY) {
+                fruit.position.y = fruit.userData.targetGroundY;
+                
+                // Bounce effect
+                if (fruit.userData.bounces < 2) {
+                    fruit.userData.velocity.y = Math.abs(fruit.userData.velocity.y) * 0.4; // Bounce with dampening
+                    fruit.userData.bounces++;
+                } else {
+                    fruit.userData.velocity.y = 0;
+                    fruit.userData.onGround = true;
+                    console.log('Power-up fruit landed on ground');
+                }
+            }
+        }
+        
+        // Glowing effects based on proximity and time remaining
+        const timeRemaining = fruit.userData.expiresAt - currentTime;
+        const urgencyFactor = 1 - (timeRemaining / POWER_UP_LIFETIME); // 0 to 1 as it expires
+        
+        if (playerControls.mesh && playerControls.isPlaying) {
+            const distance = playerControls.mesh.position.distanceTo(fruit.position);
+            
+            // Base glow that increases as expiration approaches
+            let baseIntensity = fruit.userData.originalEmissiveIntensity + urgencyFactor * 0.4;
+            
+            // Glow when player is near
+            if (distance < POWER_UP_GLOW_RADIUS) {
+                if (!fruit.userData.glowing) {
+                    fruit.userData.glowing = true;
+                    console.log('Power-up fruit is glowing - you\'re close!');
+                }
+                
+                // Intense pulsing glow
+                const intensity = baseIntensity + Math.sin(time * 8) * 0.5;
+                fruit.material.emissiveIntensity = Math.min(intensity, 1.2);
+                
+                // Scale pulsing
+                const scale = 1.0 + Math.sin(time * 6) * 0.3;
+                fruit.scale.setScalar(scale);
+                
+            } else {
+                if (fruit.userData.glowing) {
+                    fruit.userData.glowing = false;
+                }
+                
+                // Normal glow with urgency
+                const intensity = baseIntensity + Math.sin(time * 2) * 0.2;
+                fruit.material.emissiveIntensity = intensity;
+                
+                // Gentle scale animation
+                const scale = 1.0 + Math.sin(time * 3) * 0.1;
+                fruit.scale.setScalar(scale);
+            }
+            
+            // Urgent flashing when about to expire (last 5 seconds)
+            if (timeRemaining < 5000) {
+                const flashRate = Math.max(0.5, timeRemaining / 5000); // Faster flash as time runs out
+                const flash = Math.sin(time * (10 / flashRate)) > 0 ? 1.5 : 0.3;
+                fruit.material.emissiveIntensity = flash;
+                
+                // Urgent scaling
+                const urgentScale = 1.2 + Math.sin(time * 8) * 0.4;
+                fruit.scale.setScalar(urgentScale);
+            }
+        }
+        
+        // Gentle floating animation when on ground
+        if (fruit.userData.onGround) {
+            fruit.position.y = fruit.userData.targetGroundY + Math.sin(time * 2 + fruit.userData.createdAt * 0.001) * 0.5;
+        }
+    }
+}
+
+// Update leverage fruits (physics, expiration, collection)
+function updateLeverageFruits() {
+    const currentTime = Date.now();
+    const time = currentTime * 0.001;
+    
+    for (let i = leverageFruits.length - 1; i >= 0; i--) {
+        const fruit = leverageFruits[i];
+        
+        // Check expiration
+        if (currentTime > fruit.userData.expiresAt) {
+            console.log('Leverage fruit expired!');
+            createLeverageExpirationEffect(fruit.position);
+            scene.remove(fruit);
+            fruit.geometry.dispose();
+            fruit.material.dispose();
+            leverageFruits.splice(i, 1);
+            continue;
+        }
+        
+        // Update physics if not on ground
+        if (!fruit.userData.onGround) {
+            // Apply gravity
+            fruit.userData.velocity.y -= 0.5;
+            
+            // Apply velocity
+            fruit.position.add(fruit.userData.velocity);
+            
+            // Check ground collision
+            if (fruit.position.y <= fruit.userData.targetGroundY) {
+                fruit.position.y = fruit.userData.targetGroundY;
+                
+                // Bounce effect
+                if (fruit.userData.bounces < 2) {
+                    fruit.userData.velocity.y = Math.abs(fruit.userData.velocity.y) * 0.4;
+                    fruit.userData.bounces++;
+                } else {
+                    fruit.userData.velocity.y = 0;
+                    fruit.userData.onGround = true;
+                    console.log('Leverage fruit landed on ground');
+                }
+            }
+        }
+        
+        // Special golden glowing effects for leverage fruit
+        const timeRemaining = fruit.userData.expiresAt - currentTime;
+        const urgencyFactor = 1 - (timeRemaining / LEVERAGE_FRUIT_LIFETIME);
+        
+        if (playerControls.mesh && playerControls.isPlaying) {
+            const distance = playerControls.mesh.position.distanceTo(fruit.position);
+            
+            // Base gold glow that increases as expiration approaches
+            let baseIntensity = fruit.userData.originalEmissiveIntensity + urgencyFactor * 0.6;
+            
+            // Enhanced glow when player is near
+            if (distance < POWER_UP_GLOW_RADIUS) {
+                if (!fruit.userData.glowing) {
+                    fruit.userData.glowing = true;
+                    console.log('Leverage fruit is glowing - double your size awaits!');
+                }
+                
+                // Intense golden pulsing glow
+                const intensity = baseIntensity + Math.sin(time * 10) * 0.7;
+                fruit.material.emissiveIntensity = Math.min(intensity, 1.5);
+                
+                // Scale pulsing with golden effect
+                const scale = 1.1 + Math.sin(time * 8) * 0.4;
+                fruit.scale.setScalar(scale);
+                
+            } else {
+                if (fruit.userData.glowing) {
+                    fruit.userData.glowing = false;
+                }
+                
+                // Normal golden glow with urgency
+                const intensity = baseIntensity + Math.sin(time * 3) * 0.3;
+                fruit.material.emissiveIntensity = intensity;
+                
+                // Gentle scale animation
+                const scale = 1.0 + Math.sin(time * 4) * 0.15;
+                fruit.scale.setScalar(scale);
+            }
+            
+            // Urgent golden flashing when about to expire (last 10 seconds)
+            if (timeRemaining < 10000) {
+                const flashRate = Math.max(0.3, timeRemaining / 10000);
+                const flash = Math.sin(time * (12 / flashRate)) > 0 ? 2.0 : 0.4;
+                fruit.material.emissiveIntensity = flash;
+                
+                // Urgent scaling with golden intensity
+                const urgentScale = 1.3 + Math.sin(time * 10) * 0.5;
+                fruit.scale.setScalar(urgentScale);
+            }
+        }
+        
+        // Gentle floating animation when on ground with golden sparkle
+        if (fruit.userData.onGround) {
+            fruit.position.y = fruit.userData.targetGroundY + Math.sin(time * 3 + fruit.userData.createdAt * 0.001) * 0.7;
+            
+            // Add subtle rotation for extra visual appeal
+            fruit.rotation.y += 0.02;
+        }
+    }
+}
+
+// Create expiration effect when leverage fruit disappears
+function createLeverageExpirationEffect(position) {
+    const effectGroup = new THREE.Group();
+    effectGroup.position.copy(position);
+    
+    // Create golden sparkle particles
+    for (let i = 0; i < 15; i++) {
+        const sparkleGeometry = new THREE.SphereGeometry(0.3, 6, 6);
+        const sparkleMaterial = new THREE.MeshBasicMaterial({
+            color: 0xFFD700,
+            emissive: 0xFF8C00,
+            emissiveIntensity: 0.8,
+            transparent: true,
+            opacity: 0.9
+        });
+        const sparkle = new THREE.Mesh(sparkleGeometry, sparkleMaterial);
+        
+        sparkle.position.set(
+            (Math.random() - 0.5) * 4,
+            Math.random() * 3,
+            (Math.random() - 0.5) * 4
+        );
+        
+        effectGroup.add(sparkle);
+    }
+    
+    scene.add(effectGroup);
+    
+    // Animate the golden expiration effect
+    let animationTime = 0;
+    const animateExpiration = () => {
+        animationTime += 0.025;
+        
+        effectGroup.children.forEach((sparkle, index) => {
+            sparkle.position.y += 0.4;
+            sparkle.material.opacity -= 0.025;
+            sparkle.material.emissiveIntensity -= 0.03;
+            sparkle.rotation.y += 0.3;
+            sparkle.scale.multiplyScalar(0.985);
+        });
+        
+        if (animationTime < 1.2 && effectGroup.children.length > 0) {
+            requestAnimationFrame(animateExpiration);
+        } else {
+            scene.remove(effectGroup);
+            effectGroup.children.forEach(child => {
+                child.geometry.dispose();
+                child.material.dispose();
+            });
+        }
+    };
+    
+    animateExpiration();
+}
+
+// Create expiration effect when fruit disappears
+function createExpirationEffect(position) {
+    const effectGroup = new THREE.Group();
+    effectGroup.position.copy(position);
+    
+    // Create sparkle particles
+    for (let i = 0; i < 12; i++) {
+        const sparkleGeometry = new THREE.SphereGeometry(0.2, 4, 4);
+        const sparkleMaterial = new THREE.MeshBasicMaterial({
+            color: 0xFF69B4,
+            transparent: true,
+            opacity: 0.8
+        });
+        const sparkle = new THREE.Mesh(sparkleGeometry, sparkleMaterial);
+        
+        sparkle.position.set(
+            (Math.random() - 0.5) * 3,
+            Math.random() * 2,
+            (Math.random() - 0.5) * 3
+        );
+        
+        effectGroup.add(sparkle);
+    }
+    
+    scene.add(effectGroup);
+    
+    // Animate the expiration effect
+    let animationTime = 0;
+    const animateExpiration = () => {
+        animationTime += 0.03;
+        
+        effectGroup.children.forEach((sparkle, index) => {
+            sparkle.position.y += 0.3;
+            sparkle.material.opacity -= 0.03;
+            sparkle.rotation.y += 0.2;
+            sparkle.scale.multiplyScalar(0.98);
+        });
+        
+        if (animationTime < 1 && effectGroup.children.length > 0) {
+            requestAnimationFrame(animateExpiration);
+        } else {
+            scene.remove(effectGroup);
+            effectGroup.children.forEach(child => {
+                child.geometry.dispose();
+                child.material.dispose();
+            });
+        }
+    };
+    
+    animateExpiration();
+}
+
 // Handle window resize
 function onWindowResize() {
     const container = document.getElementById('canvas-container');
@@ -1335,55 +3325,48 @@ function onWindowResize() {
     renderer.setSize(container.clientWidth, container.clientHeight);
 }
 
-// Add a new transaction - 95% animals, 5% plants
+// Add a new transaction - animals + fruits on trees
 function addTransaction(data) {
-    // Check if we've reached the entity cap
-    const totalEntities = particles.length + animals.length;
-    if (totalEntities >= MAX_PLANTS) {
-        // Remove oldest entities to make room
-        if (animals.length > 0) {
-            removeOldestAnimals(Math.min(REMOVE_BATCH_SIZE, animals.length));
-        }
-        if (particles.length > 0 && totalEntities >= MAX_PLANTS) {
-            removeOldestPlants(Math.min(REMOVE_BATCH_SIZE / 2, particles.length));
-        }
+    const amount = parseFloat(data.amount);
+    
+    // Check if we've reached the entity cap for animals
+    if (animals.length >= MAX_PLANTS * 0.9) {
+        // Remove oldest animals to make room
+        removeOldestAnimals(Math.min(REMOVE_BATCH_SIZE, animals.length));
     }
     
-    // 5% chance for plant, 95% for animal
-    if (Math.random() < 0.05) {
-        // Create plant
-        const plant = new TransactionPlant(
-            data.stablecoin,
-            data.amount,
-            data.from,
-            data.to
-        );
+    // Always create animal for transaction
+    const animal = new TransactionAnimal(
+        data.stablecoin,
+        data.amount,
+        data.from,
+        data.to
+    );
+    
+    animals.push(animal);
+    scene.add(animal.mesh);
+    stats.currentAnimals = animals.length;
+    
+    // Add fruit to a random existing border tree
+    addFruitToRandomTree(data.stablecoin, amount);
+    
+    // If massive transaction (>$10k), spawn new border tree if under limit
+    if (amount > MASSIVE_TRANSACTION_THRESHOLD && borderTrees.length < MAX_BORDER_TREES) {
+        createNewBorderTree(data.stablecoin, amount);
         
-        particles.push(plant);
-        scene.add(plant.mesh);
-        stats.currentPlants = particles.length;
-    } else {
-        // Create animal
-        const animal = new TransactionAnimal(
-            data.stablecoin,
-            data.amount,
-            data.from,
-            data.to
-        );
-        
-        animals.push(animal);
-        scene.add(animal.mesh);
-        stats.currentAnimals = animals.length;
+        // Also spawn a power-up fruit for massive transactions
+        createPowerUpFruit();
     }
     
     // Update statistics
     stats.total++;
     stats[data.stablecoin]++;
+    stats.currentPlants = borderTrees.length; // Update to reflect border trees
     updateStats();
     
     // Log performance metrics periodically
     if (stats.total % 100 === 0) {
-        console.log(`Garden stats: ${particles.length} plants, ${animals.length} animals, ${renderer.info.render.triangles} triangles`);
+        console.log(`Garden stats: ${borderTrees.length} border trees, ${animals.length} animals, ${renderer.info.render.triangles} triangles`);
     }
 }
 
@@ -1419,7 +3402,10 @@ function removeOldestAnimals(count) {
 
 // Update statistics display
 function updateStats() {
-    document.getElementById('plant-count').textContent = `${stats.currentPlants} 🌳 / ${stats.currentAnimals} 🦊`;
+    // Count total fruits across all trees
+    const totalFruits = borderTrees.reduce((sum, tree) => sum + tree.fruits.length, 0);
+    
+    document.getElementById('plant-count').textContent = `${stats.currentPlants} 🌳 / ${stats.currentAnimals} 🦊 (${totalFruits} 🍎)`;
     document.getElementById('total-transactions').textContent = stats.total;
     document.getElementById('usdc-count').textContent = stats.USDC;
     document.getElementById('usdt-count').textContent = stats.USDT;
@@ -1428,19 +3414,33 @@ function updateStats() {
     // Show money collected if any
     const moneyEl = document.getElementById('money-collected');
     if (moneyEl) {
-        moneyEl.textContent = `$${stats.moneyCollected.toFixed(2)}`;
+        moneyEl.textContent = `$${moneyCollected.toFixed(2)}`;
     }
     
-    // Update the page title
-    document.title = `Stablecoin Hunt - $${stats.moneyCollected.toFixed(2)} collected`;
+    // Update lives counter
+    const livesEl = document.getElementById('lives-count');
+    if (livesEl) {
+        livesEl.textContent = `${gameState.lives}/${gameState.maxLives}`;
+        
+        // Color coding based on lives remaining
+        if (gameState.lives <= 1) {
+            livesEl.style.color = '#FF4444'; // Red when critical
+        } else if (gameState.lives <= 2) {
+            livesEl.style.color = '#FFAA44'; // Orange when low
+        } else {
+            livesEl.style.color = '#FFFFFF'; // White when safe
+        }
+    }
     
-    // Add warning color if approaching max capacity
-    const totalEntities = stats.currentPlants + stats.currentAnimals;
+    // Update the page title to show adoption progress
+    document.title = `Stablecoin Garden - ${borderTrees.length} Trees, ${totalFruits} Fruits`;
+    
+    // Add color coding based on tree growth
     const plantCountEl = document.getElementById('plant-count');
-    if (totalEntities > MAX_PLANTS * 0.9) {
-        plantCountEl.style.color = '#ff6b6b';
-    } else if (totalEntities > MAX_PLANTS * 0.75) {
-        plantCountEl.style.color = '#ffd93d';
+    if (borderTrees.length >= MAX_BORDER_TREES * 0.9) {
+        plantCountEl.style.color = '#FFD700'; // Gold when nearly full
+    } else if (borderTrees.length >= MAX_BORDER_TREES * 0.7) {
+        plantCountEl.style.color = '#90EE90'; // Light green when growing well
     } else {
         plantCountEl.style.color = '#ffffff';
     }
@@ -1460,11 +3460,51 @@ function animate(currentTime) {
         updatePlayerMovement(delta || 0.016);
         updateCameraFollow();
         checkCollisions();
+        
+        // Check for power-up fruit timer (every 2 minutes)
+        const currentTime = Date.now();
+        if (currentTime - lastPowerUpTime > POWER_UP_INTERVAL) {
+            createPowerUpFruit();
+            lastPowerUpTime = currentTime;
+        }
+        
+        // Check for leverage fruit timer (every 1.5 minutes)
+        if (currentTime - lastLeverageFruitTime > LEVERAGE_FRUIT_INTERVAL) {
+            createLeverageFruit();
+            lastLeverageFruitTime = currentTime;
+        }
+        
+        // Check for speedrun fruit timer (every 1.25 minutes)
+        if (currentTime - lastSpeedrunFruitTime > SPEEDRUN_FRUIT_INTERVAL) {
+            createSpeedrunFruit();
+            lastSpeedrunFruitTime = currentTime;
+        }
     }
     
-    // Update plants (all plants are now persistent)
-    particles.forEach(plant => {
-        plant.update();
+    // Update power-up fruits
+    updatePowerUpFruits();
+    
+    // Update leverage fruits
+    updateLeverageFruits();
+    
+    // Update speedrun fruits
+    updateSpeedrunFruits();
+    
+    // Update border trees (animate fruits)
+    borderTrees.forEach(tree => {
+        if (tree.fruits.length > 0) {
+            const time = Date.now() * 0.001;
+            tree.fruits.forEach((fruit, index) => {
+                // Gentle bobbing animation for fruits
+                const phase = time + index * 0.5;
+                fruit.position.y += Math.sin(phase * 2) * 0.02;
+                
+                // Gentle glowing effect
+                if (fruit.material.emissiveIntensity !== undefined) {
+                    fruit.material.emissiveIntensity = 0.3 + Math.sin(phase * 3) * 0.1;
+                }
+            });
+        }
     });
     
     // Update animals and remove dead ones
@@ -1610,6 +3650,8 @@ function triggerGameOver(reason) {
         playerControls.moveBackward = false;
         playerControls.moveLeft = false;
         playerControls.moveRight = false;
+        playerControls.rotateLeft = false;
+        playerControls.rotateRight = false;
         playerControls.boost = false;
     }
     
@@ -1810,14 +3852,17 @@ function disconnectWebSocket() {
     statusEl.className = 'disconnected';
 }
 
-// Clear all entities (plants and animals)
+// Clear all entities (keep border trees but remove fruits, clear animals)
 function clearParticles() {
-    // Clear plants
-    particles.forEach(plant => {
-        scene.remove(plant.mesh);
-        plant.dispose();
+    // Clear fruits from all border trees but keep trees
+    borderTrees.forEach(tree => {
+        tree.fruits.forEach(fruit => {
+            tree.mesh.remove(fruit);
+            fruit.geometry.dispose();
+            fruit.material.dispose();
+        });
+        tree.fruits = [];
     });
-    particles = [];
     
     // Clear animals
     animals.forEach(animal => {
@@ -1826,16 +3871,16 @@ function clearParticles() {
     });
     animals = [];
     
-    // Reset stats (but keep money collected)
+    // Reset stats (but keep money collected and trees)
     stats.total = 0;
     stats.USDC = 0;
     stats.USDT = 0;
     stats.DAI = 0;
-    stats.currentPlants = 0;
     stats.currentAnimals = 0;
+    // Keep currentPlants as it represents border trees
     updateStats();
     
-    console.log('Garden cleared - Money collected preserved: $' + stats.moneyCollected.toFixed(2));
+    console.log('Garden cleared - Border trees and money preserved. Trees: ' + borderTrees.length);
 }
 
 // Setup event listeners
@@ -1893,6 +3938,12 @@ function setupPlayerControls() {
             case 'ArrowRight':
                 playerControls.moveRight = true;
                 break;
+            case 'KeyQ':
+                playerControls.rotateLeft = true;
+                break;
+            case 'KeyE':
+                playerControls.rotateRight = true;
+                break;
             case 'ShiftLeft':
             case 'ShiftRight':
                 playerControls.boost = true;
@@ -1923,6 +3974,12 @@ function setupPlayerControls() {
             case 'KeyD':
             case 'ArrowRight':
                 playerControls.moveRight = false;
+                break;
+            case 'KeyQ':
+                playerControls.rotateLeft = false;
+                break;
+            case 'KeyE':
+                playerControls.rotateRight = false;
                 break;
             case 'ShiftLeft':
             case 'ShiftRight':
@@ -1997,6 +4054,14 @@ function toggleGameMode() {
         moneyCollected = 0;
         gameOver = false;
         
+        // Reset game state including lives
+        gameState.lives = 1;
+        gameState.isGameOver = false;
+        gameState.startTime = Date.now();
+        
+        // Initialize power-up timer
+        lastPowerUpTime = Date.now();
+        
         // Create player
         createPlayer();
         
@@ -2009,7 +4074,7 @@ function toggleGameMode() {
         // Request pointer lock
         renderer.domElement.requestPointerLock();
         
-        console.log('GAME STARTED! Eat smaller animals (blue), avoid larger ones (red)!');
+        console.log('GAME STARTED! Eat smaller animals (blue), avoid larger ones (red)! Collect pink fruits for extra lives!');
     } else {
         // Exit game mode
         document.exitPointerLock();
@@ -2020,6 +4085,36 @@ function toggleGameMode() {
             playerControls.mesh = null;
         }
         
+        // Clear power-up fruits (now ground-based)
+        powerUpFruits.forEach(fruit => {
+            scene.remove(fruit);
+            fruit.geometry.dispose();
+            fruit.material.dispose();
+        });
+        powerUpFruits = [];
+        
+        // Clear leverage fruits
+        leverageFruits.forEach(fruit => {
+            scene.remove(fruit);
+            fruit.geometry.dispose();
+            fruit.material.dispose();
+        });
+        leverageFruits = [];
+        
+        // Clear speedrun fruits
+        speedrunFruits.forEach(fruit => {
+            scene.remove(fruit);
+            fruit.geometry.dispose();
+            fruit.material.dispose();
+        });
+        speedrunFruits = [];
+        
+        // Reset leverage effects
+        resetLeverageEffect();
+        
+        // Reset speedrun effects
+        resetSpeedrunEffect();
+        
         // Update UI
         playBtn.textContent = '🎮 Play';
         playBtn.classList.remove('active');
@@ -2029,7 +4124,7 @@ function toggleGameMode() {
         gameState.isGameOver = false;
         gameState.startTime = null;
         
-        console.log('Bird mode deactivated');
+        console.log('Game mode deactivated');
     }
 }
 

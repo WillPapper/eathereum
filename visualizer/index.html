@@ -16,9 +16,13 @@
                     <span class="stat-label">💰 Money Collected:</span>
                     <span id="money-collected" class="stat-value" style="font-weight: bold;">$0.00</span>
                 </div>
+                <div class="stat-item" style="background: linear-gradient(135deg, #FF69B4, #FF1493); color: #FFF;">
+                    <span class="stat-label">💖 Lives:</span>
+                    <span id="lives-count" class="stat-value" style="font-weight: bold;">1/5</span>
+                </div>
                 <div class="stat-item">
-                    <span class="stat-label">Entities:</span>
-                    <span id="plant-count" class="stat-value">0 🌳 / 0 🦊</span>
+                    <span class="stat-label">Garden Growth:</span>
+                    <span id="plant-count" class="stat-value">0 🌳 / 0 🦊 (0 🍎)</span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-label">Total Transactions:</span>
@@ -48,8 +52,10 @@
                 <button id="connect-btn">Connect</button>
             </div>
             <div id="game-status" style="display: none;">
-                <span style="color: #FFD700;">🎮 Playing - WASD to move, Mouse to look</span>
-                <br><span style="color: #4A90E2;">Blue = Prey</span> | <span style="color: #FF0000;">Red = Predator</span>
+                <span style="color: #FFD700;">🎮 Playing - WASD to move, QE to rotate, Mouse to look</span>
+                <br><span style="color: #00FF00;">🟢+ = Edible</span> | <span style="color: #FF0000;">🔴✖ = Dangerous</span>
+                <br><span style="color: #FF69B4;">💖 Pink = Life Fruit</span> | <span style="color: #FFD700;">⚡ Gold = Leverage Fruit (2x size!)</span>
+                <br><span style="color: #00FFFF;">💨 Cyan = Speedrun Fruit (2x speed!)</span>
             </div>
         </div>
     </div>
