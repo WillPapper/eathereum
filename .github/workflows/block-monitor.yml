@@ -61,8 +61,5 @@ jobs:
     - name: Build
       run: cargo build --release --verbose
     
-    - name: Build Docker image
-      run: docker build -t block-monitor .
-    
     # Render.com will auto-deploy when this workflow succeeds
     # due to autoDeploy: true in render.yaml

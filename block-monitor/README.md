@@ -68,9 +68,9 @@ The server runs as a continuous background worker that polls every 2 seconds:
    - Connect your GitHub repository
    - Use these settings:
      - **Name**: block-monitor
-     - **Runtime**: Docker
-     - **Docker Context Directory**: `./block-monitor`
-     - **Dockerfile Path**: `./Dockerfile`
+     - **Runtime**: Rust
+     - **Build Command**: `cargo build --release`
+     - **Start Command**: `./target/release/block-monitor`
 
 3. **Set Environment Variables**
    - `RPC_URL`: Your Base network RPC endpoint (Alchemy, Infura, QuickNode, etc.)
