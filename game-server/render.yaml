@@ -1,11 +1,11 @@
 services:
   - type: web
-    name: redis-stream-consumer
+    name: game-server
     runtime: rust
     repo: https://github.com/wpapper/stablecoin-visualizer
-    rootDir: redis-stream-consumer
+    rootDir: game-server
     buildCommand: cargo build --release
-    startCommand: ./target/release/redis-stream-consumer
+    startCommand: ./target/release/game-server
     envVars:
       - key: REDIS_URL
         sync: false

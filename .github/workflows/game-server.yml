@@ -1,21 +1,21 @@
-name: Redis Stream Consumer CI
+name: Game Server CI
 
 on:
   push:
     paths:
-      - 'redis-stream-consumer/**'
-      - '.github/workflows/redis-stream-consumer.yml'
+      - 'game-server/**'
+      - '.github/workflows/game-server.yml'
   pull_request:
     paths:
-      - 'redis-stream-consumer/**'
-      - '.github/workflows/redis-stream-consumer.yml'
+      - 'game-server/**'
+      - '.github/workflows/game-server.yml'
 
 jobs:
   test:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: redis-stream-consumer
+        working-directory: game-server
     
     steps:
       - uses: actions/checkout@v4
