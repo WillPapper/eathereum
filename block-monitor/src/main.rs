@@ -345,7 +345,7 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }
     
-    info!("Starting Stablecoin Monitor Server for Base Network");
+    info!("Starting Block Monitor for Base Network");
     info!("RPC URL: {}", rpc_url);
     info!("Monitoring stablecoins:");
     info!("  - USDC: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");

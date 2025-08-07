@@ -1,4 +1,4 @@
-# Deployment Guide for Stablecoin Monitor
+# Deployment Guide for Block Monitor
 
 ## Quick Start with Auto-Deploy
 
@@ -34,7 +34,7 @@
 
 ### CI/CD Pipeline
 The included GitHub Actions workflow:
-- Runs on every push to `stablecoin-server/`
+- Runs on every push to `block-monitor/`
 - Checks code formatting
 - Runs clippy linter
 - Builds the Rust binary
@@ -57,7 +57,7 @@ To disable auto-deploy:
 
 ### Expected Log Output
 ```
-Starting Stablecoin Monitor Server for Base Network
+Starting Block Monitor Server for Base Network
 Monitoring stablecoins:
   - USDC: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
   - USDT: 0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2

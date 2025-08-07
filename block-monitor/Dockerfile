@@ -23,10 +23,10 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy the binary from builder
-COPY --from=builder /app/target/release/stablecoin-server /app/
+COPY --from=builder /app/target/release/block-monitor /app/
 
 # Expose WebSocket port
 EXPOSE 8080
 
 # Run the binary
-CMD ["./stablecoin-server"]
+CMD ["./block-monitor"]

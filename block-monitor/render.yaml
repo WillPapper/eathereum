@@ -1,10 +1,10 @@
 services:
   # Background worker that continuously monitors blockchain
   - type: worker
-    name: stablecoin-monitor
+    name: block-monitor
     runtime: docker
     dockerfilePath: ./Dockerfile
-    dockerContext: ./stablecoin-server
+    dockerContext: ./block-monitor
     envVars:
       - key: ALCHEMY_RPC_URL
         sync: false  # Set this in Render dashboard
@@ -19,10 +19,10 @@ services:
   # Optional: Separate web service for WebSocket connections
   # Uncomment if you want to split WebSocket server from monitor
   # - type: web
-  #   name: stablecoin-websocket
+  #   name: block-monitor-websocket
   #   runtime: docker
   #   dockerfilePath: ./Dockerfile
-  #   dockerContext: ./stablecoin-server
+  #   dockerContext: ./block-monitor
   #   envVars:
   #     - key: ALCHEMY_RPC_URL
   #       sync: false

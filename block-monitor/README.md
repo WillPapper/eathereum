@@ -1,6 +1,6 @@
-# Stablecoin Monitor Server
+# Block Monitor
 
-A Rust server that monitors Base network for stablecoin transactions (USDC, USDT, DAI) and broadcasts them via WebSocket.
+A Rust-based blockchain monitor that tracks stablecoin transactions (USDC, USDT, DAI) on Base network and broadcasts them via WebSocket.
 
 ## Features
 
@@ -53,9 +53,9 @@ The server runs as a continuous background worker that polls every 2 seconds:
    - Click "New +" → "Background Worker"
    - Connect your GitHub repository
    - Use these settings:
-     - **Name**: stablecoin-monitor
+     - **Name**: block-monitor
      - **Runtime**: Docker
-     - **Docker Context Directory**: `./stablecoin-server`
+     - **Docker Context Directory**: `./block-monitor`
      - **Dockerfile Path**: `./Dockerfile`
 
 3. **Set Environment Variables**

@@ -1,5 +1,5 @@
 [package]
-name = "stablecoin-server"
+name = "block-monitor"
 version = "0.1.0"
 edition = "2021"
 
