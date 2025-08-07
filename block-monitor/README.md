@@ -23,16 +23,30 @@ Source: [Base Official Documentation](https://docs.base.org/)
 
 ## Local Development
 
-1. **Setup Environment**
+1. **Setup Git Hooks** (one-time setup)
    ```bash
+   # From project root
+   ./setup-hooks.sh
+   # This enables automatic cargo fmt on every commit
+   ```
+
+2. **Setup Environment**
+   ```bash
+   cd block-monitor
    cp .env.example .env
    # Edit .env and add your RPC URL
    ```
 
-2. **Build and Run**
+3. **Build and Run**
    ```bash
    cargo build --release
    cargo run
+   ```
+
+4. **Code Formatting**
+   ```bash
+   cargo fmt        # Format code manually
+   cargo fmt --check # Check formatting without changes
    ```
 
 3. **WebSocket Connection**
