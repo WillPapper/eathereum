@@ -139,15 +139,32 @@ impl StablecoinMonitor {
         // Create interval timer for polling every 2 seconds
         // This runs continuously as a background worker
         let mut interval = time::interval(Duration::from_secs(2));
+        let mut last_logged_block = 0u64;
 
         info!("Starting blockchain monitoring loop (polling every 2 seconds)");
 
         loop {
             interval.tick().await;
 
-            if let Err(e) = self.check_new_blocks().await {
-                error!("Error checking blocks: {}", e);
-                // Continue running even on errors - don't crash the worker
+            match self.provider.get_block_number().await {
+                Ok(current_block) => {
+                    let last_processed = *self.last_block.read().await;
+
+                    if current_block > last_processed {
+                        // New blocks available
+                        if let Err(e) = self.check_new_blocks().await {
+                            error!("Error checking blocks: {}", e);
+                        }
+                    } else if current_block != last_logged_block {
+                        // Log when we're waiting at a new block number
+                        info!("Waiting for new blocks... (current: {})", current_block);
+                        last_logged_block = current_block;
+                    }
+                }
+                Err(e) => {
+                    error!("Error fetching current block number: {}", e);
+                    // Continue running even on errors
+                }
             }
         }
     }
@@ -155,21 +172,25 @@ impl StablecoinMonitor {
     async fn check_new_blocks(&self) -> Result<()> {
         // Get latest block number
         let latest_block = self.provider.get_block_number().await?;
-        let mut last_processed = *self.last_block.read().await;
+        let last_processed = *self.last_block.read().await;
 
-        // Process any new blocks
-        while last_processed < latest_block {
-            last_processed += 1;
+        // Only process if we have a new block
+        if latest_block > last_processed {
+            // Process all blocks we're behind on (in case we missed some)
+            for block_num in (last_processed + 1)..=latest_block {
+                info!("Processing block {}", block_num);
 
-            info!("Processing block {}", last_processed);
-
-            // Use logs approach which is more reliable
-            if let Err(e) = self.process_block_by_logs(last_processed).await {
-                error!("Error processing block {} logs: {}", last_processed, e);
+                // Use logs approach which is more reliable
+                if let Err(e) = self.process_block_by_logs(block_num).await {
+                    error!("Error processing block {} logs: {}", block_num, e);
+                    // Continue processing other blocks even if one fails
+                }
             }
 
-            // Update last processed block regardless of errors
-            *self.last_block.write().await = last_processed;
+            // Update last processed block to the latest
+            *self.last_block.write().await = latest_block;
+
+            info!("Caught up to block {}", latest_block);
         }
 
         Ok(())
