@@ -4,6 +4,10 @@ let particles = [];
 let isPaused = false;
 let ws = null;
 
+// Configuration
+const MAX_PLANTS = 10000; // Maximum number of plants in the garden
+const REMOVE_BATCH_SIZE = 100; // Number of oldest plants to remove when cap is reached
+
 // Stablecoin colors - nature-inspired, vibrant colors
 const STABLECOIN_COLORS = {
     USDC: 0x4A90E2,  // Sky blue - like morning sky
@@ -16,7 +20,8 @@ const stats = {
     total: 0,
     USDC: 0,
     USDT: 0,
-    DAI: 0
+    DAI: 0,
+    currentPlants: 0  // Track current plant count
 };
 
 // Transaction plant class - represents a transaction as a growing plant
@@ -63,38 +68,39 @@ class TransactionPlant {
         this.mesh.scale.set(0.01, 0.01, 0.01);
         
         this.age = 0;
-        this.maxAge = 400 + (amountLog * 100); // Larger amounts last longer
+        this.isPersistent = true; // Plants are now persistent
         this.isFullyGrown = false;
+        this.createdAt = Date.now(); // Track creation time for removal order
     }
     
     createSmallPlant() {
         // Small flower with stem
         this.plantType = 'flower';
         
-        // Stem
+        // Stem - reduced segments for performance
         const stemGeometry = new THREE.CylinderGeometry(
             this.stemWidth * 0.5, 
             this.stemWidth, 
-            this.targetHeight
+            this.targetHeight,
+            4, // Reduced segments
+            1
         );
         const stemMaterial = new THREE.MeshLambertMaterial({ 
             color: 0x2D5016 // Dark green stem
         });
         this.stem = new THREE.Mesh(stemGeometry, stemMaterial);
         this.stem.position.y = this.targetHeight / 2;
-        this.stem.castShadow = true;
+        this.stem.castShadow = false; // Disable shadows for small plants
         this.mesh.add(this.stem);
         
-        // Flower petals (multiple small spheres)
-        const petalCount = 5 + Math.floor(Math.random() * 3);
+        // Flower petals - reduced geometry
+        const petalCount = 5;
         this.petals = [];
         for (let i = 0; i < petalCount; i++) {
             const angle = (i / petalCount) * Math.PI * 2;
-            const petalGeometry = new THREE.SphereGeometry(this.stemWidth * 2, 6, 4);
-            const petalMaterial = new THREE.MeshPhongMaterial({
-                color: this.baseColor,
-                emissive: this.baseColor,
-                emissiveIntensity: 0.2
+            const petalGeometry = new THREE.SphereGeometry(this.stemWidth * 2, 4, 3); // Reduced segments
+            const petalMaterial = new THREE.MeshLambertMaterial({ // Use simpler material
+                color: this.baseColor
             });
             const petal = new THREE.Mesh(petalGeometry, petalMaterial);
             petal.position.set(
@@ -107,8 +113,8 @@ class TransactionPlant {
             this.mesh.add(petal);
         }
         
-        // Center of flower
-        const centerGeometry = new THREE.SphereGeometry(this.stemWidth * 1.5, 8, 6);
+        // Center of flower - reduced geometry
+        const centerGeometry = new THREE.SphereGeometry(this.stemWidth * 1.5, 4, 3);
         const centerMaterial = new THREE.MeshLambertMaterial({
             color: 0xFFFF00 // Yellow center
         });
@@ -323,61 +329,81 @@ class TransactionPlant {
             }
         }
         
-        // Sway animation (wind effect)
-        const swayAmount = this.isFullyGrown ? 0.03 : 0.01;
-        const time = Date.now() * 0.001;
-        this.mesh.rotation.z = Math.sin(time + this.swayPhase) * swayAmount;
-        this.mesh.rotation.x = Math.cos(time * 0.7 + this.swayPhase) * swayAmount * 0.5;
+        // Calculate distance from camera for LOD
+        const distance = camera.position.distanceTo(this.mesh.position);
+        const isNear = distance < 50;
+        const isMedium = distance < 100;
         
-        // Animate specific plant parts
-        if (this.plantType === 'flower' && this.petals) {
-            // Petals open and close slightly
-            this.petals.forEach((petal, i) => {
-                const petalPhase = i * 0.5;
-                petal.scale.y = 0.6 + Math.sin(time * 0.5 + petalPhase) * 0.1;
-            });
-        } else if (this.plantType === 'tree' && this.fruits) {
-            // Fruits bob slightly
-            this.fruits.forEach((fruit, i) => {
-                fruit.position.y += Math.sin(time * 2 + i) * 0.01;
-            });
-            
-            // Pulse aura for whale transactions
-            if (this.aura) {
-                this.aura.material.opacity = 0.1 + Math.sin(time * 3) * 0.05;
-                this.aura.scale.set(
-                    1 + Math.sin(time * 2) * 0.1,
-                    1 + Math.sin(time * 2) * 0.1,
-                    1 + Math.sin(time * 2) * 0.1
-                );
-            }
-        } else if (this.flowers) {
-            // Flowers on bushes/ornamental plants glow pulse
-            this.flowers.forEach((flower, i) => {
-                if (flower.material.emissiveIntensity !== undefined) {
-                    flower.material.emissiveIntensity = 0.3 + Math.sin(time * 2 + i * 0.5) * 0.2;
-                }
-            });
+        // Only animate if close enough
+        if (isMedium) {
+            // Sway animation (wind effect)
+            const swayAmount = this.isFullyGrown ? 0.03 : 0.01;
+            const time = Date.now() * 0.001;
+            this.mesh.rotation.z = Math.sin(time + this.swayPhase) * swayAmount;
+            this.mesh.rotation.x = Math.cos(time * 0.7 + this.swayPhase) * swayAmount * 0.5;
         }
         
-        // Age and fade
-        this.age++;
-        const fadeStart = this.maxAge * 0.8;
-        if (this.age > fadeStart) {
-            const fadeProgress = (this.age - fadeStart) / (this.maxAge * 0.2);
+        // Only animate detailed parts if very close
+        if (isNear) {
+            const time = Date.now() * 0.001;
             
-            // Fade all materials in the plant
-            this.mesh.traverse((child) => {
-                if (child.material) {
-                    if (child.material.opacity !== undefined) {
-                        child.material.transparent = true;
-                        child.material.opacity = Math.max(0, 1 - fadeProgress);
+            // Animate specific plant parts
+            if (this.plantType === 'flower' && this.petals) {
+                // Petals open and close slightly
+                this.petals.forEach((petal, i) => {
+                    const petalPhase = i * 0.5;
+                    petal.scale.y = 0.6 + Math.sin(time * 0.5 + petalPhase) * 0.1;
+                });
+            } else if (this.plantType === 'tree' && this.fruits) {
+                // Fruits bob slightly
+                this.fruits.forEach((fruit, i) => {
+                    fruit.position.y += Math.sin(time * 2 + i) * 0.01;
+                });
+                
+                // Pulse aura for whale transactions
+                if (this.aura) {
+                    this.aura.material.opacity = 0.1 + Math.sin(time * 3) * 0.05;
+                    this.aura.scale.set(
+                        1 + Math.sin(time * 2) * 0.1,
+                        1 + Math.sin(time * 2) * 0.1,
+                        1 + Math.sin(time * 2) * 0.1
+                    );
+                }
+            } else if (this.flowers) {
+                // Flowers on bushes/ornamental plants glow pulse
+                this.flowers.forEach((flower, i) => {
+                    if (flower.material.emissiveIntensity !== undefined) {
+                        flower.material.emissiveIntensity = 0.3 + Math.sin(time * 2 + i * 0.5) * 0.2;
                     }
-                }
-            });
+                });
+            }
         }
         
-        return this.age < this.maxAge;
+        // Hide very distant plants for performance
+        this.mesh.visible = distance < 150;
+        
+        // Plants are now persistent - no automatic fading
+        this.age++;
+        
+        // Return true to keep the plant alive (persistent)
+        return this.isPersistent;
+    }
+    
+    // Method to dispose of the plant when removed
+    dispose() {
+        // Dispose of all geometries and materials in the plant
+        this.mesh.traverse((child) => {
+            if (child.geometry) {
+                child.geometry.dispose();
+            }
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(mat => mat.dispose());
+                } else {
+                    child.material.dispose();
+                }
+            }
+        });
     }
 }
 
@@ -629,6 +655,12 @@ function onWindowResize() {
 
 // Add a new transaction plant
 function addTransaction(data) {
+    // Check if we've reached the plant cap
+    if (particles.length >= MAX_PLANTS) {
+        // Remove oldest plants to make room
+        removeOldestPlants(REMOVE_BATCH_SIZE);
+    }
+    
     const plant = new TransactionPlant(
         data.stablecoin,
         data.amount,
@@ -642,45 +674,59 @@ function addTransaction(data) {
     // Update statistics
     stats.total++;
     stats[data.stablecoin]++;
+    stats.currentPlants = particles.length;
     updateStats();
     
-    // Play a sprouting sound effect (optional)
-    // You could add sound effects here if desired
+    // Log performance metrics periodically
+    if (stats.total % 100 === 0) {
+        console.log(`Garden stats: ${particles.length} plants, ${renderer.info.render.triangles} triangles, ${renderer.info.memory.geometries} geometries`);
+    }
+}
+
+// Remove the oldest plants from the garden
+function removeOldestPlants(count) {
+    // Sort by creation time and remove the oldest
+    particles.sort((a, b) => a.createdAt - b.createdAt);
+    
+    const plantsToRemove = particles.splice(0, Math.min(count, particles.length));
+    
+    plantsToRemove.forEach(plant => {
+        scene.remove(plant.mesh);
+        plant.dispose();
+    });
+    
+    console.log(`Removed ${plantsToRemove.length} oldest plants. Current count: ${particles.length}`);
 }
 
 // Update statistics display
 function updateStats() {
+    document.getElementById('plant-count').textContent = stats.currentPlants;
     document.getElementById('total-transactions').textContent = stats.total;
     document.getElementById('usdc-count').textContent = stats.USDC;
     document.getElementById('usdt-count').textContent = stats.USDT;
     document.getElementById('dai-count').textContent = stats.DAI;
+    
+    // Update the page title to show plant count
+    document.title = `Stablecoin Garden - ${stats.currentPlants} plants`;
+    
+    // Add warning color if approaching max capacity
+    const plantCountEl = document.getElementById('plant-count');
+    if (stats.currentPlants > MAX_PLANTS * 0.9) {
+        plantCountEl.style.color = '#ff6b6b';
+    } else if (stats.currentPlants > MAX_PLANTS * 0.75) {
+        plantCountEl.style.color = '#ffd93d';
+    } else {
+        plantCountEl.style.color = '#ffffff';
+    }
 }
 
 // Animation loop
 function animate() {
     requestAnimationFrame(animate);
     
-    // Update plants
-    particles = particles.filter(plant => {
-        const alive = plant.update();
-        if (!alive) {
-            scene.remove(plant.mesh);
-            
-            // Dispose of all geometries and materials in the plant
-            plant.mesh.traverse((child) => {
-                if (child.geometry) {
-                    child.geometry.dispose();
-                }
-                if (child.material) {
-                    if (Array.isArray(child.material)) {
-                        child.material.forEach(mat => mat.dispose());
-                    } else {
-                        child.material.dispose();
-                    }
-                }
-            });
-        }
-        return alive;
+    // Update plants (all plants are now persistent)
+    particles.forEach(plant => {
+        plant.update();
     });
     
     // Animate garden elements
@@ -807,20 +853,7 @@ function disconnectWebSocket() {
 function clearParticles() {
     particles.forEach(plant => {
         scene.remove(plant.mesh);
-        
-        // Dispose of all geometries and materials in the plant
-        plant.mesh.traverse((child) => {
-            if (child.geometry) {
-                child.geometry.dispose();
-            }
-            if (child.material) {
-                if (Array.isArray(child.material)) {
-                    child.material.forEach(mat => mat.dispose());
-                } else {
-                    child.material.dispose();
-                }
-            }
-        });
+        plant.dispose();
     });
     particles = [];
     
@@ -829,7 +862,10 @@ function clearParticles() {
     stats.USDC = 0;
     stats.USDT = 0;
     stats.DAI = 0;
+    stats.currentPlants = 0;
     updateStats();
+    
+    console.log('Garden cleared');
 }
 
 // Setup event listeners
