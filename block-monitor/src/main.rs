@@ -1,9 +1,9 @@
 use alloy::{
     consensus::Transaction as _,
     network::TransactionResponse,
-    primitives::{address, Address, U256},
+    primitives::{address, Address, FixedBytes, U256},
     providers::{Provider, ProviderBuilder},
-    rpc::types::{Block, BlockTransactionsKind, Transaction},
+    rpc::types::{Block, BlockTransactionsKind, Filter, Log, Transaction},
     sol,
     sol_types::SolCall,
 };
@@ -28,10 +28,11 @@ const USDC_ADDRESS: Address = address!("833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 const USDT_ADDRESS: Address = address!("fde4C96c8593536E31F229EA8f37b2ADa2699bb2"); // USDT on Base
 const DAI_ADDRESS: Address = address!("50c5725949A6F0c72E6C4a641F24049A917DB0Cb"); // DAI on Base
 
-// ERC20 Transfer event signature (kept for future use with event logs)
-#[allow(dead_code)]
-const TRANSFER_EVENT_SIGNATURE: &str =
-    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+// ERC20 Transfer event signature
+const TRANSFER_EVENT_SIGNATURE: FixedBytes<32> = FixedBytes::new([
+    0xdd, 0xf2, 0x52, 0xad, 0x1b, 0xe2, 0xc8, 0x9b, 0x69, 0xc2, 0xb0, 0x68, 0xfc, 0x37, 0x8d, 0xaa,
+    0x95, 0x2b, 0xa7, 0xf1, 0x63, 0xc4, 0xa1, 0x16, 0x28, 0xf5, 0x5a, 0x4d, 0xf5, 0x23, 0xb3, 0xef,
+]);
 
 // Define ERC20 functions using sol! macro
 sol! {
@@ -162,53 +163,66 @@ impl StablecoinMonitor {
 
             info!("Processing block {}", last_processed);
 
-            // Get block with transactions - handle potential deserialization errors
-            match self
-                .provider
-                .get_block_by_number(last_processed.into(), BlockTransactionsKind::Full)
-                .await
-            {
-                Ok(Some(block)) => {
-                    if let Err(e) = self.process_block(block).await {
-                        error!("Error processing block {}: {}", last_processed, e);
-                        // Continue to next block even if processing fails
-                    }
-                }
-                Ok(None) => {
-                    // Block not found, skip
-                    info!("Block {} not found, skipping", last_processed);
-                }
-                Err(e) => {
-                    // Log error and try alternative approach
-                    error!(
-                        "Error fetching block {} with full transactions: {}",
-                        last_processed, e
-                    );
-
-                    // Try fetching block without full transaction details as fallback
-                    match self
-                        .provider
-                        .get_block_by_number(last_processed.into(), BlockTransactionsKind::Hashes)
-                        .await
-                    {
-                        Ok(Some(_block_header)) => {
-                            info!("Block {} exists but has transaction format issues. Skipping transaction processing.", last_processed);
-                        }
-                        Ok(None) => {
-                            info!("Block {} not found", last_processed);
-                        }
-                        Err(e2) => {
-                            error!(
-                                "Error fetching block {} header: {}. Skipping.",
-                                last_processed, e2
-                            );
-                        }
-                    }
-                }
+            // Use logs approach which is more reliable
+            if let Err(e) = self.process_block_by_logs(last_processed).await {
+                error!("Error processing block {} logs: {}", last_processed, e);
             }
 
             // Update last processed block regardless of errors
             *self.last_block.write().await = last_processed;
+        }
+
+        Ok(())
+    }
+
+    async fn process_block_by_logs(&self, block_number: u64) -> Result<()> {
+        // Create filter for Transfer events from our stablecoin addresses
+        let filter = Filter::new()
+            .from_block(block_number)
+            .to_block(block_number)
+            .address(vec![USDC_ADDRESS, USDT_ADDRESS, DAI_ADDRESS])
+            .event_signature(vec![TRANSFER_EVENT_SIGNATURE]);
+
+        // Get logs
+        match self.provider.get_logs(&filter).await {
+            Ok(logs) => {
+                for log in logs {
+                    if let Some(stablecoin_info) = self.stablecoins.get(&log.address()) {
+                        // Parse Transfer event
+                        // Transfer(address indexed from, address indexed to, uint256 value)
+                        if log.topics().len() >= 3 && log.data().data.len() >= 32 {
+                            let from_bytes: &[u8] = log.topics()[1].as_ref();
+                            let to_bytes: &[u8] = log.topics()[2].as_ref();
+                            let from = Address::from_slice(&from_bytes[12..]);
+                            let to = Address::from_slice(&to_bytes[12..]);
+                            let amount = U256::from_be_slice(&log.data().data);
+
+                            let tx_data = TransactionData {
+                                stablecoin: stablecoin_info.name.to_string(),
+                                amount: self.format_amount(amount, stablecoin_info.decimals),
+                                from: format!("{:?}", from),
+                                to: format!("{:?}", to),
+                                block_number,
+                                tx_hash: format!("{:?}", log.transaction_hash),
+                            };
+
+                            info!(
+                                "Found {} transfer: {} -> {} amount: {}",
+                                tx_data.stablecoin, tx_data.from, tx_data.to, tx_data.amount
+                            );
+
+                            // Publish to Redis
+                            self.publish_to_redis(&tx_data).await;
+
+                            // Also broadcast to WebSocket clients
+                            let _ = self.tx_broadcaster.send(tx_data);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Error fetching logs for block {}: {}", block_number, e);
+            }
         }
 
         Ok(())
@@ -237,6 +251,113 @@ impl StablecoinMonitor {
                         // Also broadcast to WebSocket clients (backwards compatibility)
                         let _ = self.tx_broadcaster.send(tx_data);
                     }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn process_block_by_hashes(&self, block: Block) -> Result<()> {
+        let block_number = block.header.number;
+
+        // Get transaction hashes from the block
+        let tx_hashes = block
+            .transactions
+            .as_hashes()
+            .ok_or_else(|| eyre::eyre!("Expected transaction hashes in block"))?;
+
+        // Process each transaction hash individually
+        for tx_hash in tx_hashes {
+            // Fetch the full transaction by hash
+            match self.provider.get_transaction_by_hash(*tx_hash).await {
+                Ok(Some(tx)) => {
+                    // Check if this is a transaction to one of our stablecoin contracts
+                    if let Some(to) = tx.to() {
+                        if let Some(stablecoin_info) = self.stablecoins.get(&to) {
+                            // Parse the input data directly
+                            let input = tx.input();
+
+                            // Check if it's a transfer or transferFrom
+                            if input.len() >= 4 {
+                                let selector = &input[0..4];
+
+                                // transfer(address,uint256) - 0xa9059cbb
+                                if selector == [0xa9, 0x05, 0x9c, 0xbb] && input.len() >= 68 {
+                                    // Decode transfer
+                                    if let Ok(decoded) = transferCall::abi_decode(input, false) {
+                                        let amount = self.format_amount(
+                                            decoded.amount,
+                                            stablecoin_info.decimals,
+                                        );
+                                        let tx_data = TransactionData {
+                                            stablecoin: stablecoin_info.name.to_string(),
+                                            amount,
+                                            from: format!("{:?}", tx.from),
+                                            to: format!("{:?}", decoded.to),
+                                            block_number,
+                                            tx_hash: format!("{:?}", tx.tx_hash()),
+                                        };
+
+                                        info!(
+                                            "Found {} transfer: {} -> {} amount: {}",
+                                            tx_data.stablecoin,
+                                            tx_data.from,
+                                            tx_data.to,
+                                            tx_data.amount
+                                        );
+
+                                        // Publish to Redis
+                                        self.publish_to_redis(&tx_data).await;
+
+                                        // Also broadcast to WebSocket clients
+                                        let _ = self.tx_broadcaster.send(tx_data);
+                                    }
+                                }
+
+                                // transferFrom(address,address,uint256) - 0x23b872dd
+                                if selector == [0x23, 0xb8, 0x72, 0xdd] && input.len() >= 100 {
+                                    // Decode transferFrom
+                                    if let Ok(decoded) = transferFromCall::abi_decode(input, false)
+                                    {
+                                        let amount = self.format_amount(
+                                            decoded.amount,
+                                            stablecoin_info.decimals,
+                                        );
+                                        let tx_data = TransactionData {
+                                            stablecoin: stablecoin_info.name.to_string(),
+                                            amount,
+                                            from: format!("{:?}", decoded.from),
+                                            to: format!("{:?}", decoded.to),
+                                            block_number,
+                                            tx_hash: format!("{:?}", tx.tx_hash()),
+                                        };
+
+                                        info!(
+                                            "Found {} transfer: {} -> {} amount: {}",
+                                            tx_data.stablecoin,
+                                            tx_data.from,
+                                            tx_data.to,
+                                            tx_data.amount
+                                        );
+
+                                        // Publish to Redis
+                                        self.publish_to_redis(&tx_data).await;
+
+                                        // Also broadcast to WebSocket clients
+                                        let _ = self.tx_broadcaster.send(tx_data);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(None) => {
+                    // Transaction not found, skip
+                }
+                Err(e) => {
+                    // Log error but continue processing other transactions
+                    error!("Error fetching transaction {}: {}", tx_hash, e);
                 }
             }
         }
