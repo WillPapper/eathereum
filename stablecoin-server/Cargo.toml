@@ -1,0 +1,32 @@
+[package]
+name = "stablecoin-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Alloy for Ethereum interaction
+alloy = { version = "0.8", features = ["full"] }
+alloy-primitives = "0.8"
+alloy-sol-types = "0.8"
+
+# WebSocket server
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling and logging
+eyre = "0.6"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# HTTP client for health checks
+reqwest = { version = "0.12", features = ["json"] }
+
+# Environment variables
+dotenv = "0.15"

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: stablecoin-monitor
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: ./stablecoin-server
+    envVars:
+      - key: ALCHEMY_RPC_URL
+        sync: false  # Set this in Render dashboard
+      - key: PORT
+        value: 8080
+      - key: RUST_LOG
+        value: info
+    healthCheckPath: /health
+    autoDeploy: false  # Set to true if you want auto-deploy from GitHub
