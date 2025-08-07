@@ -132,16 +132,52 @@ impl StablecoinMonitor {
 
             info!("Processing block {}", last_processed);
 
-            // Get block with transactions
-            if let Some(block) = self
+            // Get block with transactions - handle potential deserialization errors
+            match self
                 .provider
                 .get_block_by_number(last_processed.into(), BlockTransactionsKind::Full)
-                .await?
+                .await
             {
-                self.process_block(block).await?;
+                Ok(Some(block)) => {
+                    if let Err(e) = self.process_block(block).await {
+                        error!("Error processing block {}: {}", last_processed, e);
+                        // Continue to next block even if processing fails
+                    }
+                }
+                Ok(None) => {
+                    // Block not found, skip
+                    info!("Block {} not found, skipping", last_processed);
+                }
+                Err(e) => {
+                    // Log error and try alternative approach
+                    error!(
+                        "Error fetching block {} with full transactions: {}",
+                        last_processed, e
+                    );
+
+                    // Try fetching block without full transaction details as fallback
+                    match self
+                        .provider
+                        .get_block_by_number(last_processed.into(), BlockTransactionsKind::Hashes)
+                        .await
+                    {
+                        Ok(Some(_block_header)) => {
+                            info!("Block {} exists but has transaction format issues. Skipping transaction processing.", last_processed);
+                        }
+                        Ok(None) => {
+                            info!("Block {} not found", last_processed);
+                        }
+                        Err(e2) => {
+                            error!(
+                                "Error fetching block {} header: {}. Skipping.",
+                                last_processed, e2
+                            );
+                        }
+                    }
+                }
             }
 
-            // Update last processed block
+            // Update last processed block regardless of errors
             *self.last_block.write().await = last_processed;
         }
 
