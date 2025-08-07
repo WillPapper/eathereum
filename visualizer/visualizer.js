@@ -1496,8 +1496,10 @@ function animate(currentTime) {
     renderer.render(scene, camera);
 }
 
-// Check for bird collisions with animals and plants
-function checkBirdCollisions() {
+// Removed old bird collision function
+/* Old checkBirdCollisions removed - now using checkCollisions for ground-based player */
+
+function checkBirdCollisions_REMOVED() {
     if (gameState.isGameOver) return;
     
     const birdPosition = camera.position;
@@ -1585,22 +1587,22 @@ function showEatEffect(position, value, stablecoin) {
     // Show value text (optional - could add floating text here)
 }
 
-// Trigger game over
+// Trigger game over (old function - kept for compatibility)
 function triggerGameOver(reason) {
     if (gameState.isGameOver) return;
     
     gameState.isGameOver = true;
     gameState.endTime = Date.now();
     
-    // Stop bird movement
-    birdControls.velocity.set(0, 0, 0);
-    birdControls.moveForward = false;
-    birdControls.moveBackward = false;
-    birdControls.moveLeft = false;
-    birdControls.moveRight = false;
-    birdControls.moveUp = false;
-    birdControls.moveDown = false;
-    birdControls.boost = false;
+    // Stop player movement
+    if (playerControls.isPlaying) {
+        playerControls.velocity.set(0, 0, 0);
+        playerControls.moveForward = false;
+        playerControls.moveBackward = false;
+        playerControls.moveLeft = false;
+        playerControls.moveRight = false;
+        playerControls.boost = false;
+    }
     
     // Update high score
     if (gameState.currentScore > gameState.highScore) {
@@ -1679,28 +1681,8 @@ function showGameOverScreen(reason) {
 
 // Restart the game
 function restartGame() {
-    // Remove game over screen
-    const gameOverScreen = document.getElementById('game-over-screen');
-    if (gameOverScreen) gameOverScreen.remove();
-    
-    // Reset game state
-    gameState.isGameOver = false;
-    gameState.currentScore = 0;
-    gameState.startTime = Date.now();
-    stats.moneyCollected = 0;
-    
-    // Reset bird position
-    camera.position.set(0, 20, 80);
-    birdControls.velocity.set(0, 0, 0);
-    birdControls.rotation.set(0, 0, 0);
-    
-    // Clear all entities
-    clearParticles();
-    
-    // Update UI
-    updateStats();
-    
-    console.log('Game restarted! Avoid the plants, eat the animals!');
+    // Simply reload the page for now
+    location.reload();
 }
 
 // Exit to garden view
@@ -1709,91 +1691,18 @@ function exitToGarden() {
     const gameOverScreen = document.getElementById('game-over-screen');
     if (gameOverScreen) gameOverScreen.remove();
     
-    // Exit bird mode
-    birdControls.isFlying = false;
+    // Exit game mode
+    playerControls.isPlaying = false;
     gameState.isGameOver = false;
-    toggleBirdMode();
+    gameOver = false;
     
     // Reset stats but keep entities
-    stats.moneyCollected = 0;
+    moneyCollected = 0;
     gameState.currentScore = 0;
     updateStats();
 }
 
-// Update bird flight physics
-function updateBirdFlight() {
-    const delta = 0.016; // Assume 60fps for now
-    
-    // Apply mouse look
-    birdControls.rotation.y -= birdControls.mouseX * 0.002;
-    birdControls.rotation.x -= birdControls.mouseY * 0.002;
-    birdControls.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, birdControls.rotation.x));
-    
-    // Reset mouse delta
-    birdControls.mouseX = 0;
-    birdControls.mouseY = 0;
-    
-    // Calculate movement direction based on camera rotation
-    const moveSpeed = birdControls.boost ? 150 : 50;
-    const direction = new THREE.Vector3();
-    const right = new THREE.Vector3();
-    const up = new THREE.Vector3(0, 1, 0);
-    
-    // Get forward direction from camera
-    camera.getWorldDirection(direction);
-    right.crossVectors(direction, up).normalize();
-    
-    // Apply movement forces
-    const acceleration = new THREE.Vector3();
-    
-    if (birdControls.moveForward) {
-        acceleration.add(direction.multiplyScalar(moveSpeed));
-    }
-    if (birdControls.moveBackward) {
-        acceleration.sub(direction.multiplyScalar(moveSpeed));
-    }
-    if (birdControls.moveLeft) {
-        acceleration.sub(right.multiplyScalar(moveSpeed));
-    }
-    if (birdControls.moveRight) {
-        acceleration.add(right.multiplyScalar(moveSpeed));
-    }
-    if (birdControls.moveUp) {
-        acceleration.y += moveSpeed;
-    }
-    if (birdControls.moveDown) {
-        acceleration.y -= moveSpeed;
-    }
-    
-    // Apply acceleration to velocity
-    birdControls.velocity.add(acceleration.multiplyScalar(delta));
-    
-    // Apply drag (air resistance)
-    birdControls.velocity.multiplyScalar(0.9);
-    
-    // Apply gentle gravity when not actively flying up
-    if (!birdControls.moveUp) {
-        birdControls.velocity.y -= 9.8 * delta;
-    }
-    
-    // Update camera position
-    camera.position.add(birdControls.velocity.clone().multiplyScalar(delta));
-    
-    // Prevent going below ground
-    const minHeight = -25;
-    if (camera.position.y < minHeight) {
-        camera.position.y = minHeight;
-        birdControls.velocity.y = Math.max(0, birdControls.velocity.y);
-    }
-    
-    // Apply rotation to camera
-    camera.rotation.copy(birdControls.rotation);
-    
-    // Add wing flapping effect
-    const flapSpeed = birdControls.velocity.length() > 10 ? 0.2 : 0.1;
-    const flapAmount = Math.sin(Date.now() * 0.01) * flapSpeed;
-    camera.rotation.z = flapAmount * 0.1;
-}
+// Removed old bird flight physics function
 
 // WebSocket connection
 function connectWebSocket() {
@@ -2115,84 +2024,7 @@ function toggleGameMode() {
     }
 }
 
-// Highlight dangerous plants
-function highlightDangerousPlants() {
-    particles.forEach(plant => {
-        if (plant.mesh.visible && !plant.dangerGlow) {
-            // Add subtle red outline to warn about danger
-            const outlineGeometry = new THREE.SphereGeometry(plant.targetHeight * 0.6, 6, 4);
-            const outlineMaterial = new THREE.MeshBasicMaterial({
-                color: 0xff0000,
-                transparent: true,
-                opacity: 0.15,
-                side: THREE.BackSide
-            });
-            plant.dangerGlow = new THREE.Mesh(outlineGeometry, outlineMaterial);
-            plant.dangerGlow.position.y = plant.targetHeight * 0.5;
-            plant.mesh.add(plant.dangerGlow);
-        }
-    });
-}
-
-// Remove highlight from plants
-function removeHighlightFromPlants() {
-    particles.forEach(plant => {
-        if (plant.dangerGlow) {
-            plant.mesh.remove(plant.dangerGlow);
-            plant.dangerGlow.geometry.dispose();
-            plant.dangerGlow.material.dispose();
-            plant.dangerGlow = null;
-        }
-    });
-}
-
-// Show bird flight instructions
-function showBirdInstructions() {
-    const instructions = document.createElement('div');
-    instructions.id = 'bird-instructions';
-    instructions.innerHTML = `
-        <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-                    background: linear-gradient(135deg, rgba(0,0,0,0.9), rgba(50,0,0,0.9)); 
-                    color: white; padding: 30px; 
-                    border-radius: 15px; text-align: center; z-index: 1000;
-                    border: 2px solid #ff0000; box-shadow: 0 0 30px rgba(255,0,0,0.3);">
-            <h2 style="color: #FFD700; margin-bottom: 20px;">🦅 HUNTING GAME 🦅</h2>
-            <div style="background: rgba(255,0,0,0.2); padding: 10px; border-radius: 10px; margin-bottom: 15px;">
-                <p style="font-size: 18px; color: #ff6b6b; font-weight: bold;">⚠️ WARNING ⚠️</p>
-                <p style="color: #ffd700;">🦊 EAT Animals = 💰 Money</p>
-                <p style="color: #ff6b6b;">🌳 AVOID Plants = ☠️ GAME OVER!</p>
-            </div>
-            <div style="text-align: left; display: inline-block;">
-                <p><strong>Click</strong> - Capture mouse</p>
-                <p><strong>Mouse</strong> - Look around</p>
-                <p><strong>W/A/S/D</strong> - Fly directions</p>
-                <p><strong>Space</strong> - Fly up</p>
-                <p><strong>Shift</strong> - Dive down</p>
-                <p><strong>Q</strong> - Speed boost</p>
-                <p><strong>F</strong> - Exit game</p>
-            </div>
-            <p style="margin-top: 15px; color: #ffd700; font-size: 14px;">
-                High Score: $${gameState.highScore.toFixed(2)}
-            </p>
-        </div>
-    `;
-    document.body.appendChild(instructions);
-    
-    // Auto-hide after 7 seconds
-    setTimeout(() => {
-        if (instructions.parentNode) {
-            instructions.style.opacity = '0.3';
-        }
-    }, 7000);
-}
-
-// Hide bird flight instructions
-function hideBirdInstructions() {
-    const instructions = document.getElementById('bird-instructions');
-    if (instructions) {
-        instructions.remove();
-    }
-}
+// Removed old bird-related UI functions
 
 // Initialize everything when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
