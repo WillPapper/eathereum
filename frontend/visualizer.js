@@ -3604,59 +3604,81 @@ function initiateAnimalAlliance() {
     
     console.log(`🎯 Alliance aggressiveness: ${maxPairs} max pairs, ${(sizeThreshold * 100).toFixed(0)}% size threshold`);
     
-    // More aggressive pairing - pair any animals that together could be threatening
+    // Pair similar-sized animals, starting with the largest
+    // This creates more effective merged animals
     for (let i = 0; i < sortedAnimals.length - 1; i++) {
         if (alreadyPaired.has(sortedAnimals[i])) continue;
         
         const animal1 = sortedAnimals[i];
+        let bestPartner = null;
+        let bestScore = -1;
         
-        // Find best partner for this animal
-        for (let j = i + 1; j < sortedAnimals.length; j++) {
+        // Look for the best partner (similar size preferred)
+        for (let j = i + 1; j < Math.min(i + 10, sortedAnimals.length); j++) {
             if (alreadyPaired.has(sortedAnimals[j])) continue;
             
             const animal2 = sortedAnimals[j];
             
-            // Aggressive merge criteria scales with dominance
-            const combinedSize = animal1.size + animal2.size * mergeFactor;
+            // Calculate size ratio (closer to 1.0 is better)
+            const sizeRatio = animal2.size / animal1.size;
+            const similarityScore = 1 - Math.abs(1 - sizeRatio); // 1.0 when equal, 0 when very different
             
-            if (combinedSize > playerControls.size * sizeThreshold) {
-                mergePairs.push([animal1, animal2]);
-                alreadyPaired.add(animal1);
-                alreadyPaired.add(animal2);
-                
-                // Set their AI states to seek merging
-                animal1.aiState = 'merging';
-                animal1.mergePartner = animal2;
-                animal1.behaviorState = 'wandering'; // Reset behavior state
-                
-                animal2.aiState = 'merging';
-                animal2.mergePartner = animal1;
-                animal2.behaviorState = 'wandering'; // Reset behavior state
-                
-                console.log(`💑 Pairing ${animal1.animalType} (${animal1.size.toFixed(1)}) with ${animal2.animalType} (${animal2.size.toFixed(1)}) → Combined: ${combinedSize.toFixed(1)} (need >${(playerControls.size * sizeThreshold).toFixed(1)})`);
-                
-                // Allow more pairs when extremely dominant
-                if (mergePairs.length >= maxPairs) break;
+            // Calculate combined effectiveness
+            const combinedSize = animal1.size + animal2.size * mergeFactor;
+            const effectiveness = combinedSize / playerControls.size;
+            
+            // Score based on both similarity and effectiveness
+            // Prioritize similar sizes for better merges
+            const score = similarityScore * 0.7 + effectiveness * 0.3;
+            
+            // Only consider if meets minimum threshold
+            if (combinedSize > playerControls.size * sizeThreshold && score > bestScore) {
+                bestPartner = animal2;
+                bestScore = score;
             }
         }
         
-        if (mergePairs.length >= maxPairs) break;
+        // Pair with best partner if found
+        if (bestPartner) {
+            const combinedSize = animal1.size + bestPartner.size * mergeFactor;
+            
+            mergePairs.push([animal1, bestPartner]);
+            alreadyPaired.add(animal1);
+            alreadyPaired.add(bestPartner);
+            
+            // Set their AI states to seek merging
+            animal1.aiState = 'merging';
+            animal1.mergePartner = bestPartner;
+            animal1.behaviorState = 'wandering';
+            
+            bestPartner.aiState = 'merging';
+            bestPartner.mergePartner = animal1;
+            bestPartner.behaviorState = 'wandering';
+            
+            console.log(`💑 Pairing ${animal1.animalType} (${animal1.size.toFixed(1)}) with ${bestPartner.animalType} (${bestPartner.size.toFixed(1)}) → Combined: ${combinedSize.toFixed(1)} (ratio: ${(bestPartner.size/animal1.size).toFixed(2)})`);
+            
+            if (mergePairs.length >= maxPairs) break;
+        }
     }
     
     if (mergePairs.length === 0) {
         console.log('⚠️ No suitable pairs found - forcing aggressive merges!');
-        // When extremely dominant, force merge multiple pairs
+        // When extremely dominant, force merge the largest animals
         const forcePairs = Math.min(Math.floor(sortedAnimals.length / 2), dominanceFactor > 2 ? 4 : 2);
         
-        for (let i = 0; i < forcePairs * 2 && i < sortedAnimals.length - 1; i += 2) {
-            const animal1 = sortedAnimals[i];
-            const animal2 = sortedAnimals[i + 1];
+        // Pair largest with second-largest, third with fourth, etc.
+        for (let i = 0; i < forcePairs && i * 2 < sortedAnimals.length - 1; i++) {
+            const animal1 = sortedAnimals[i * 2];
+            const animal2 = sortedAnimals[i * 2 + 1];
             
-            if (animal1 && animal2) {
+            if (animal1 && animal2 && !alreadyPaired.has(animal1) && !alreadyPaired.has(animal2)) {
                 animal1.aiState = 'merging';
                 animal1.mergePartner = animal2;
                 animal2.aiState = 'merging';
                 animal2.mergePartner = animal1;
+                
+                alreadyPaired.add(animal1);
+                alreadyPaired.add(animal2);
                 
                 const combinedSize = animal1.size + animal2.size * 0.9;
                 console.log(`🔴 FORCED PAIRING: ${animal1.animalType} (${animal1.size.toFixed(1)}) + ${animal2.animalType} (${animal2.size.toFixed(1)}) = ${combinedSize.toFixed(1)}`);
