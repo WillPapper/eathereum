@@ -4044,50 +4044,80 @@ function exitToGarden() {
 function connectWebSocket() {
     const statusEl = document.getElementById('status');
     
-    // For now, we'll simulate transactions since WebSocket server isn't implemented yet
-    statusEl.textContent = 'Simulating';
-    statusEl.className = 'connected';
+    // Connect to the game server WebSocket
+    // Use ws://localhost:8080/ws for local development
+    // Use wss://your-game-server.onrender.com/ws for production
+    const wsUrl = window.location.hostname === 'localhost' 
+        ? 'ws://localhost:8080/ws'
+        : `wss://${window.location.hostname}/ws`;
     
-    // Simulate random transactions
-    simulateTransactions();
-    
-    // Actual WebSocket code (to be used when server is ready):
-    /*
-    ws = new WebSocket('ws://localhost:8080');
-    
-    ws.onopen = () => {
-        statusEl.textContent = 'Connected';
-        statusEl.className = 'connected';
-        console.log('Connected to WebSocket server');
-    };
-    
-    ws.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            addTransaction(data);
-        } catch (error) {
-            console.error('Error parsing message:', error);
-        }
-    };
-    
-    ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        statusEl.textContent = 'Error';
+    try {
+        ws = new WebSocket(wsUrl);
+        
+        ws.onopen = () => {
+            statusEl.textContent = 'Connected';
+            statusEl.className = 'connected';
+            console.log('Connected to WebSocket server');
+        };
+        
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                // The game server sends transaction data with these fields:
+                // { stablecoin, amount, from, to, block_number, tx_hash }
+                addTransaction(data);
+                
+                // Update statistics
+                stats.transactions++;
+                stats.volume += parseFloat(data.amount) || 0;
+                updateStats();
+            } catch (error) {
+                console.error('Error parsing message:', error);
+            }
+        };
+        
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            statusEl.textContent = 'Error';
+            statusEl.className = 'error';
+            
+            // Try to reconnect after 5 seconds
+            setTimeout(() => {
+                if (!ws || ws.readyState === WebSocket.CLOSED) {
+                    console.log('Attempting to reconnect...');
+                    connectWebSocket();
+                }
+            }, 5000);
+        };
+        
+        ws.onclose = () => {
+            statusEl.textContent = 'Disconnected';
+            statusEl.className = 'disconnected';
+            console.log('Disconnected from WebSocket server');
+            ws = null;
+            
+            // Auto-reconnect after 3 seconds
+            setTimeout(() => {
+                if (!ws) {
+                    console.log('Auto-reconnecting...');
+                    connectWebSocket();
+                }
+            }, 3000);
+        };
+    } catch (error) {
+        console.error('Failed to create WebSocket connection:', error);
+        statusEl.textContent = 'Connection Failed';
         statusEl.className = 'error';
-    };
-    
-    ws.onclose = () => {
-        statusEl.textContent = 'Disconnected';
-        statusEl.className = 'disconnected';
-        console.log('Disconnected from WebSocket server');
-        ws = null;
-    };
-    */
+        
+        // Fall back to simulation mode if connection fails
+        console.log('Falling back to simulation mode');
+        simulateTransactions();
+    }
 }
 
-// Simulate transactions for testing
+// Simulate transactions for testing (only when WebSocket is not connected)
 function simulateTransactions() {
-    if (isPaused || !ws === null) return;
+    if (isPaused || ws !== null) return;
     
     // Random chance to create a transaction
     if (Math.random() < 0.3) {
