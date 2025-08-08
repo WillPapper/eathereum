@@ -39,22 +39,28 @@ Animals larger than the player will:
 #### Fixed Chase/Flee Speeds (NOT affected by player speed boosts)
 - **Rabbits**: 
   - Chase: N/A (too small to chase)
-  - Flee: 2x their base speed + panic modifier
+  - Flee: 1.3x their base speed (slight speed boost)
 - **Foxes**:
-  - Chase: 8.0 units/second (80% of base player speed)
-  - Flee: 1.8x their base speed
+  - Chase: 3.5 units/second (35% of base player speed - stalking)
+  - Flee: 1.2x their base speed
 - **Deer**:
-  - Chase: 8.5 units/second (85% of base player speed)
-  - Flee: 1.5x their base speed
+  - Chase: 4.0 units/second (40% of base player speed - persistent)
+  - Flee: 1.15x their base speed
 - **Bears**:
-  - Chase: 7.5 units/second (75% of base player speed)
-  - Flee: 1.3x their base speed (rarely flee)
+  - Chase: 3.0 units/second (30% of base player speed - slow menace)
+  - Flee: 1.1x their base speed (barely flee)
 
-#### Important: Speed Boost Independence
+#### The Thrill of the Chase
+- **Predators are MUCH slower** than the player (30-40% speed)
+- **Prey only slightly speeds up** when fleeing (10-30% boost)
+- **Panic adds minimal speed** (up to 15% when very close)
+- This creates tension - you can catch prey with persistence, and escape predators with skill
+
+#### Important: Speed Boost Power
 When the player collects speed boost fruits:
-- Player speed increases (e.g., 10 → 20 units/second)
-- **Predator chase speeds remain fixed** (e.g., Bear still chases at 7.5 units/second)
-- This allows speed boosts to be an effective escape mechanism
+- Player speed doubles (10 → 20 units/second)
+- **Predator chase speeds remain fixed** (e.g., Bear still chases at 3.0 units/second)
+- Speed boosts become powerful escape tools and hunting aids
 
 ### 5. Visual Indicators
 - **Green Plus (+)**: Edible animal
