@@ -4973,86 +4973,9 @@ function showGameOverScreen(reason) {
 function restartGame() {
     console.log('Restarting game...');
     
-    // Remove game over screen
-    const gameOverScreen = document.getElementById('game-over-screen');
-    if (gameOverScreen) {
-        gameOverScreen.remove();
-    }
-    
-    // Remove any event listeners
-    if (window.gameOverRestartListener) {
-        document.removeEventListener('keydown', window.gameOverRestartListener, true);
-        document.removeEventListener('click', window.gameOverRestartListener, true);
-        window.removeEventListener('keydown', window.gameOverRestartListener, true);
-        window.removeEventListener('click', window.gameOverRestartListener, true);
-        delete window.gameOverRestartListener;
-    }
-    
-    // Reset game state
-    gameOver = false;
-    gameState.isGameOver = false;
-    gameState.lives = 1;
-    gameState.currentScore = 0;
-    moneyCollected = 0;
-    
-    // Reset player
-    playerControls.size = 1.0;
-    naturalPlayerSize = 1.0;
-    currentLeverageMultiplier = 1.0;
-    leverageActive = false;
-    speedrunActive = false;
-    playerControls.speed = originalPlayerSpeed;
-    
-    // Clear any active effects
-    if (leverageEffectTimer) {
-        clearTimeout(leverageEffectTimer);
-        leverageEffectTimer = null;
-    }
-    if (speedrunEffectTimer) {
-        clearTimeout(speedrunEffectTimer);
-        speedrunEffectTimer = null;
-    }
-    
-    // Reset player position
-    if (playerControls.mesh) {
-        playerControls.mesh.position.set(0, playerControls.size * 0.5 - 30, 0);
-        playerControls.velocity.set(0, 0, 0);
-        
-        // Update player scale
-        playerControls.mesh.scale.setScalar(playerControls.size);
-    }
-    
-    // Clear all power-up fruits
-    powerUpFruits.forEach(fruit => scene.remove(fruit));
-    powerUpFruits = [];
-    leverageFruits.forEach(fruit => scene.remove(fruit));
-    leverageFruits = [];
-    speedrunFruits.forEach(fruit => scene.remove(fruit));
-    speedrunFruits = [];
-    
-    // Reset timers
-    gameState.startTime = Date.now();
-    gameState.endTime = null;
-    lastPowerUpTime = Date.now();
-    lastLeverageFruitTime = Date.now();
-    lastSpeedrunFruitTime = Date.now();
-    
-    // Keep playing
-    playerControls.isPlaying = true;
-    
-    // Update UI
-    updateStats();
-    const playBtn = document.getElementById('play-btn');
-    if (playBtn) {
-        playBtn.textContent = '🛑 Stop';
-        playBtn.classList.add('active');
-    }
-    const gameStatus = document.getElementById('game-status');
-    if (gameStatus) {
-        gameStatus.style.display = 'block';
-    }
-    
-    console.log('Game restarted successfully');
+    // Simply reload the page for a clean restart
+    // This is more reliable than trying to reset all state
+    location.reload();
 }
 
 // Make restartGame globally accessible
