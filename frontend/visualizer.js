@@ -1589,6 +1589,14 @@ class TransactionAnimal {
     }
     
     dispose() {
+        // Clean up merge partner if we had one
+        if (this.mergePartner && this.mergePartner.isAlive) {
+            console.log(`🔓 Freeing ${this.mergePartner.animalType} from broken merge (partner disposed)`);
+            this.mergePartner.aiState = 'roaming';
+            this.mergePartner.mergePartner = null;
+            this.mergePartner.hasMerged = false;
+        }
+        
         if (this.indicator) {
             this.mesh.remove(this.indicator);
             // Dispose of all parts of the floating icon
@@ -1854,6 +1862,17 @@ function checkCollisions() {
 
 // Handle eating an animal
 function eatAnimal(animal, index) {
+    // Clean up merge partner if this animal was merging
+    if (animal.mergePartner && animal.mergePartner.isAlive) {
+        console.log(`🔓 Freeing ${animal.mergePartner.animalType} from broken merge partnership (eaten by player)`);
+        animal.mergePartner.aiState = 'roaming';
+        animal.mergePartner.mergePartner = null;
+        animal.mergePartner.hasMerged = false;
+    }
+    
+    // Mark as not alive before removal
+    animal.isAlive = false;
+    
     // Add to money collected
     moneyCollected += animal.amount;
     
@@ -3500,6 +3519,17 @@ function checkDifficultyScaling() {
 
 // Handle animal eating another animal (survival mode behavior)
 function animalEatAnimal(predator, prey) {
+    // Clean up merge partner if prey was merging
+    if (prey.mergePartner && prey.mergePartner.isAlive) {
+        console.log(`🔓 Freeing ${prey.mergePartner.animalType} from broken merge (partner eaten by ${predator.animalType})`);
+        prey.mergePartner.aiState = 'roaming';
+        prey.mergePartner.mergePartner = null;
+        prey.mergePartner.hasMerged = false;
+    }
+    
+    // Mark prey as not alive
+    prey.isAlive = false;
+    
     // Calculate growth from eating
     const growthFactor = Math.log10(prey.amount + 1) * 0.15; // Slightly more growth than player eating
     predator.size = Math.min(predator.size + growthFactor, 8); // Max animal size of 8
