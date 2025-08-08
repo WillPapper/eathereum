@@ -2925,28 +2925,29 @@ function showFruitNotification(config) {
     notification.className = 'fruit-notification';
     
     // Calculate position based on existing notifications
-    const baseTop = isMobile ? 60 : 20; // Start lower on mobile to avoid overlap with UI
-    const spacing = isMobile ? 70 : 60; // More spacing on mobile
+    const baseTop = 0; // Start at the very top
+    const spacing = isMobile ? 45 : 40; // Thin bar spacing
     const currentTop = baseTop + (activeNotifications.length * spacing);
     
     notification.style.cssText = `
         position: fixed;
         top: ${currentTop}px;
-        left: 50%;
-        transform: translateX(-50%);
+        left: 0;
+        right: 0;
+        width: 100%;
         background: ${config.gradient};
         color: ${config.textColor};
-        padding: ${isMobile ? '12px 20px' : '15px 25px'};
-        border-radius: 10px;
-        font-size: ${isMobile ? '14px' : '16px'};
-        font-weight: bold;
+        padding: ${isMobile ? '8px 15px' : '10px 20px'};
+        font-size: ${isMobile ? '13px' : '14px'};
+        font-weight: 600;
         z-index: 1000;
-        animation: slideDown 0.5s ease-out;
-        box-shadow: 0 5px 20px ${config.shadowColor};
-        border: 2px solid ${config.borderColor};
-        max-width: ${isMobile ? '90%' : 'auto'};
+        animation: slideDown 0.3s ease-out;
+        box-shadow: 0 2px 10px ${config.shadowColor};
+        border-bottom: 2px solid ${config.borderColor};
         text-align: center;
-        white-space: ${isMobile ? 'normal' : 'nowrap'};
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     `;
     notification.textContent = config.text;
     
@@ -2957,21 +2958,21 @@ function showFruitNotification(config) {
         style.textContent = `
             @keyframes slideDown {
                 from { 
-                    transform: translateX(-50%) translateY(-100%); 
+                    transform: translateY(-100%); 
                     opacity: 0; 
                 }
                 to { 
-                    transform: translateX(-50%) translateY(0); 
+                    transform: translateY(0); 
                     opacity: 1; 
                 }
             }
             @keyframes slideUp {
                 from { 
-                    transform: translateX(-50%) translateY(0); 
+                    transform: translateY(0); 
                     opacity: 1; 
                 }
                 to { 
-                    transform: translateX(-50%) translateY(-100%); 
+                    transform: translateY(-100%); 
                     opacity: 0; 
                 }
             }
@@ -2982,10 +2983,10 @@ function showFruitNotification(config) {
     document.body.appendChild(notification);
     activeNotifications.push(notification);
     
-    // Remove notification after 4 seconds
+    // Remove notification after 3 seconds (reduced from 4)
     setTimeout(() => {
         if (notification.parentNode) {
-            notification.style.animation = 'slideUp 0.5s ease-in';
+            notification.style.animation = 'slideUp 0.3s ease-in';
             setTimeout(() => {
                 if (notification.parentNode) {
                     document.body.removeChild(notification);
@@ -2996,16 +2997,16 @@ function showFruitNotification(config) {
                         repositionNotifications();
                     }
                 }
-            }, 500);
+            }, 300);
         }
-    }, 4000);
+    }, 3000);
 }
 
 // Reposition remaining notifications after one is removed
 function repositionNotifications() {
     const isMobile = window.innerWidth <= 768;
-    const baseTop = isMobile ? 60 : 20;
-    const spacing = isMobile ? 70 : 60;
+    const baseTop = 0;
+    const spacing = isMobile ? 45 : 40;
     
     activeNotifications.forEach((notification, index) => {
         const newTop = baseTop + (index * spacing);
