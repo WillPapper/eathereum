@@ -4142,7 +4142,6 @@ function clearParticles() {
 function setupEventListeners() {
     const pauseBtn = document.getElementById('pause-btn');
     const clearBtn = document.getElementById('clear-btn');
-    const connectBtn = document.getElementById('connect-btn');
     const playBtn = document.getElementById('play-btn');
     
     pauseBtn.addEventListener('click', () => {
@@ -4151,11 +4150,6 @@ function setupEventListeners() {
     });
     
     clearBtn.addEventListener('click', clearParticles);
-    
-    connectBtn.addEventListener('click', () => {
-        const isConnecting = wsManager.toggle();
-        connectBtn.textContent = isConnecting ? 'Disconnect' : 'Connect';
-    });
     
     playBtn.addEventListener('click', () => {
         toggleGameMode();
@@ -4387,6 +4381,9 @@ document.addEventListener('DOMContentLoaded', () => {
     animate();
     setupEventListeners();
     setupWebSocketListeners();
+    
+    // Automatically connect to WebSocket on page load
+    wsManager.connect();
 });
 
 // Make game functions globally accessible for HTML buttons
