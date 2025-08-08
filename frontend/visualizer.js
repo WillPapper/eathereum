@@ -504,6 +504,7 @@ class TransactionAnimal {
         this.from = from;
         this.to = to;
         this.isAlive = true;
+        this.id = Math.random(); // Unique ID for tie-breaking in merge decisions
         
         // Animal size based on amount
         const amountLog = Math.log10(this.amount + 1);
@@ -548,6 +549,7 @@ class TransactionAnimal {
         this.originalSize = this.size; // Store original size for growth tracking
         this.growthFromEating = 0; // How much size gained from eating other animals
         this.mergePartner = null; // Partner for alliance merging
+        this.hasMerged = false; // Flag to prevent double-merging
         
         // Get animal color based on stablecoin
         this.baseColor = STABLECOIN_COLORS[stablecoin] || 0xFFFFFF;
@@ -782,9 +784,13 @@ class TransactionAnimal {
             }
         }
         
-        // Skip wandering if merging - the seekMergePartner handles movement
-        if (this.aiState === 'merging') {
-            // Movement is handled by seekMergePartner
+        // For merging animals, ensure they're actually moving
+        if (this.aiState === 'merging' && this.mergePartner) {
+            // seekMergePartner already set targetDirection and speed
+            // Just make sure we're not stuck
+            if (this.speed < 3.0) {
+                this.speed = 5.0; // Force movement speed
+            }
         }
         
         // Apply movement
@@ -1104,43 +1110,65 @@ class TransactionAnimal {
             console.log(`🔴 ${this.animalType} lost merge partner, returning to roaming`);
             this.aiState = 'roaming';
             this.mergePartner = null;
+            this.hasMerged = false; // Reset merge flag
             return;
         }
         
         const distance = this.mesh.position.distanceTo(this.mergePartner.mesh.position);
-        const mergeRange = this.size + this.mergePartner.size + 2; // Slightly larger range
+        const mergeRange = this.size + this.mergePartner.size + 3; // Larger merge range
+        
+        // Debug every frame to see what's happening
+        if (Math.random() < 0.05) {
+            console.log(`📍 ${this.animalType} → ${this.mergePartner.animalType} | Distance: ${distance.toFixed(1)} | Range: ${mergeRange.toFixed(1)} | Speed: ${this.speed.toFixed(1)}`);
+        }
         
         if (distance < mergeRange) {
-            // Close enough to merge! Only merge once (prevent double merge)
-            if (this.size >= this.mergePartner.size) {
-                console.log(`🔀 ${this.animalType} merging with ${this.mergePartner.animalType}!`);
-                mergeAnimals(this, this.mergePartner);
+            // Close enough to merge! 
+            // Check if partner is also in merging state and they're pointing at each other
+            if (this.mergePartner.aiState === 'merging' && this.mergePartner.mergePartner === this) {
+                // Use a consistent rule to decide who initiates (e.g., larger size, or if equal, use unique ID)
+                const shouldInitiate = this.size > this.mergePartner.size || 
+                    (this.size === this.mergePartner.size && this.id > this.mergePartner.id);
+                
+                if (shouldInitiate && !this.hasMerged) {
+                    console.log(`✅ MERGING NOW: ${this.animalType} (${this.size.toFixed(1)}) absorbing ${this.mergePartner.animalType} (${this.mergePartner.size.toFixed(1)})`);
+                    // Set flags to prevent double-merging
+                    this.hasMerged = true;
+                    this.mergePartner.hasMerged = true;
+                    
+                    // Call the global mergeAnimals function
+                    if (typeof mergeAnimals === 'function') {
+                        mergeAnimals(this, this.mergePartner);
+                    } else {
+                        console.error('❌ mergeAnimals function not found!');
+                    }
+                }
+            } else {
+                if (this.mergePartner.aiState !== 'merging') {
+                    console.log(`⚠️ Partner ${this.mergePartner.animalType} not in merge state!`);
+                }
+                if (this.mergePartner.mergePartner !== this) {
+                    console.log(`⚠️ Partner ${this.mergePartner.animalType} doesn't have us as merge partner!`);
+                }
             }
         } else {
-            // Move toward merge partner more aggressively
+            // Move toward merge partner
             const moveDirection = new THREE.Vector3();
             moveDirection.subVectors(this.mergePartner.mesh.position, this.mesh.position);
             moveDirection.y = 0;
-            moveDirection.normalize();
             
-            // Set direction toward partner with smooth turning
-            const targetAngle = Math.atan2(moveDirection.x, moveDirection.z);
-            const angleDiff = this.normalizeAngle(targetAngle - this.targetDirection);
-            this.targetDirection += angleDiff * 0.3; // Smooth but responsive turning
-            
-            // Move much faster when merging - alliance urgency!
-            this.speed = Math.max(this.baseSpeed * 3.0, 5.0); // At least 5.0 speed
-            
-            // Visual indication of merging intent - glowing effect
-            if (Math.random() < 0.2) {
-                this.mesh.scale.x = this.size / this.originalSize * (1 + Math.random() * 0.1);
-                this.mesh.scale.y = this.size / this.originalSize * (1 + Math.random() * 0.1);
-                this.mesh.scale.z = this.size / this.originalSize * (1 + Math.random() * 0.1);
-            }
-            
-            // Debug log periodically
-            if (Math.random() < 0.01) {
-                console.log(`📍 ${this.animalType} seeking partner ${this.mergePartner.animalType} - Distance: ${distance.toFixed(1)}`);
+            if (moveDirection.length() > 0) {
+                moveDirection.normalize();
+                
+                // Direct movement toward partner
+                this.targetDirection = Math.atan2(moveDirection.x, moveDirection.z);
+                
+                // High speed for merging
+                this.speed = 8.0; // Fixed high speed
+                
+                // Visual pulse effect
+                const pulse = 1 + Math.sin(Date.now() * 0.01) * 0.1;
+                this.mesh.scale.setScalar((this.size / this.originalSize) * pulse);
             }
         }
     }
@@ -3515,6 +3543,7 @@ function mergeAnimals(animal1, animal2) {
     // Reset absorber's state
     absorber.aiState = 'roaming';
     absorber.mergePartner = null;
+    absorber.hasMerged = false; // Reset merge flag
     
     console.log(`🔮 Alliance formed! ${absorber.animalType} absorbed ${absorbed.animalType}. New size: ${newSize.toFixed(1)} (vs player: ${playerControls.size.toFixed(1)})`);
     
