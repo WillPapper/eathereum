@@ -6,6 +6,7 @@ use redis::{AsyncCommands, Client};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 use tracing::{error, info, warn};
@@ -25,11 +26,14 @@ struct TransactionData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 enum ClientMessage {
-    UpdateScore {
+    StartSession {
         player_name: String,
-        score: f64,
-        animals_eaten: u32,
     },
+    AnimalEaten {
+        animal_id: String,
+        animal_value: f64,
+    },
+    PlayerDied,
     GetLeaderboard,
 }
 
@@ -37,6 +41,9 @@ enum ClientMessage {
 #[serde(tag = "type")]
 enum ServerMessage {
     Transaction(TransactionData),
+    SessionStarted {
+        session_token: String,
+    },
     Leaderboard {
         entries: Vec<LeaderboardEntry>,
     },
@@ -44,6 +51,9 @@ enum ServerMessage {
         player_name: String,
         rank: u32,
         score: f64,
+    },
+    InvalidAction {
+        reason: String,
     },
 }
 
@@ -55,7 +65,28 @@ struct LeaderboardEntry {
     animals_eaten: u32,
 }
 
-type Clients = Arc<RwLock<HashMap<String, tokio::sync::mpsc::UnboundedSender<Message>>>>;
+#[derive(Debug, Clone)]
+struct PlayerSession {
+    player_name: String,
+    session_token: String,
+    score: f64,
+    animals_eaten: u32,
+    session_start: Instant,
+    last_update: Instant,
+    last_animal_eaten: Instant,
+    eaten_animals: HashMap<String, Instant>,  // Track animal IDs to prevent duplicates
+    update_count: u32,
+    suspicious_activity: u32,
+}
+
+type Clients = Arc<RwLock<HashMap<String, ClientConnection>>>;
+type Sessions = Arc<RwLock<HashMap<String, PlayerSession>>>;
+
+#[derive(Debug, Clone)]
+struct ClientConnection {
+    tx: tokio::sync::mpsc::UnboundedSender<Message>,
+    session_token: Option<String>,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -91,6 +122,7 @@ async fn main() -> Result<()> {
     info!("  Health Port: {}", health_port);
 
     let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
+    let sessions: Sessions = Arc::new(RwLock::new(HashMap::new()));
 
     info!("Connecting to Redis...");
     let redis_client = match Client::open(redis_url.clone()) {
@@ -132,9 +164,10 @@ async fn main() -> Result<()> {
     let ws_route = warp::path("ws")
         .and(warp::ws())
         .and(with_clients(clients.clone()))
+        .and(with_sessions(sessions.clone()))
         .and(with_redis(redis_conn_ws))
-        .map(|ws: warp::ws::Ws, clients, redis_conn| {
-            ws.on_upgrade(move |socket| client_connected(socket, clients, redis_conn))
+        .map(|ws: warp::ws::Ws, clients, sessions, redis_conn| {
+            ws.on_upgrade(move |socket| client_connected(socket, clients, sessions, redis_conn))
         });
 
     let cors = warp::cors()
@@ -302,8 +335,8 @@ async fn broadcast_to_clients(clients: &Clients, data: &TransactionData) {
     let clients_guard = clients.read().await;
     let mut disconnected = Vec::new();
 
-    for (id, tx) in clients_guard.iter() {
-        if tx.send(message.clone()).is_err() {
+    for (id, conn) in clients_guard.iter() {
+        if conn.tx.send(message.clone()).is_err() {
             disconnected.push(id.clone());
         }
     }
@@ -331,7 +364,18 @@ fn with_redis(
     warp::any().map(move || conn.clone())
 }
 
-async fn client_connected(ws: WebSocket, clients: Clients, mut redis_conn: MultiplexedConnection) {
+fn with_sessions(
+    sessions: Sessions,
+) -> impl Filter<Extract = (Sessions,), Error = std::convert::Infallible> + Clone {
+    warp::any().map(move || sessions.clone())
+}
+
+async fn client_connected(
+    ws: WebSocket,
+    clients: Clients,
+    sessions: Sessions,
+    mut redis_conn: MultiplexedConnection,
+) {
     let (mut client_ws_tx, mut client_ws_rx) = ws.split();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -339,7 +383,13 @@ async fn client_connected(ws: WebSocket, clients: Clients, mut redis_conn: Multi
 
     let client_count = {
         let mut clients_guard = clients.write().await;
-        clients_guard.insert(client_id.clone(), tx.clone());
+        clients_guard.insert(
+            client_id.clone(),
+            ClientConnection {
+                tx: tx.clone(),
+                session_token: None,
+            },
+        );
         clients_guard.len()
     };
 
@@ -361,12 +411,32 @@ async fn client_connected(ws: WebSocket, clients: Clients, mut redis_conn: Multi
 
     // Handle incoming messages from client
     let clients_clone = clients.clone();
+    let sessions_clone = sessions.clone();
     while let Some(result) = client_ws_rx.next().await {
         if let Ok(msg) = result {
             if let Ok(text) = msg.to_str() {
                 if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(text) {
-                    handle_client_message(client_msg, &mut redis_conn, &clients_clone).await;
+                    handle_client_message(
+                        client_msg,
+                        &client_id,
+                        &mut redis_conn,
+                        &clients_clone,
+                        &sessions_clone,
+                    )
+                    .await;
                 }
+            }
+        }
+    }
+
+    // Clean up session if exists
+    {
+        let clients_guard = clients.read().await;
+        if let Some(conn) = clients_guard.get(&client_id) {
+            if let Some(token) = &conn.session_token {
+                let mut sessions_guard = sessions.write().await;
+                sessions_guard.remove(token);
+                info!("Removed session for disconnected client {}", client_id);
             }
         }
     }
@@ -384,44 +454,259 @@ async fn client_connected(ws: WebSocket, clients: Clients, mut redis_conn: Multi
 
 async fn handle_client_message(
     msg: ClientMessage,
+    client_id: &str,
     redis_conn: &mut MultiplexedConnection,
     clients: &Clients,
+    sessions: &Sessions,
 ) {
     match msg {
-        ClientMessage::UpdateScore {
-            player_name,
-            score,
-            animals_eaten,
-        } => {
-            info!(
-                "📊 Score update: {} - score: {}, animals: {}",
-                player_name, score, animals_eaten
-            );
-            
-            // Update leaderboard in Redis
-            if let Err(e) = update_leaderboard(redis_conn, &player_name, score, animals_eaten).await {
-                error!("Failed to update leaderboard: {:?}", e);
+        ClientMessage::StartSession { player_name } => {
+            // Validate player name
+            if player_name.is_empty() || player_name.len() > 20 {
+                send_to_client(
+                    clients,
+                    client_id,
+                    &ServerMessage::InvalidAction {
+                        reason: "Invalid player name".to_string(),
+                    },
+                )
+                .await;
                 return;
             }
             
-            // Get current rank
-            if let Ok(rank) = get_player_rank(redis_conn, &player_name).await {
-                // Broadcast score update to all clients
-                let update_msg = ServerMessage::ScoreUpdated {
-                    player_name: player_name.clone(),
-                    rank,
-                    score,
-                };
+            // Generate session token
+            let session_token = uuid::Uuid::new_v4().to_string();
+            
+            // Create new session
+            let session = PlayerSession {
+                player_name: player_name.clone(),
+                session_token: session_token.clone(),
+                score: 0.0,
+                animals_eaten: 0,
+                session_start: Instant::now(),
+                last_update: Instant::now(),
+                last_animal_eaten: Instant::now(),
+                eaten_animals: HashMap::new(),
+                update_count: 0,
+                suspicious_activity: 0,
+            };
+            
+            // Store session
+            {
+                let mut sessions_guard = sessions.write().await;
+                sessions_guard.insert(session_token.clone(), session);
+            }
+            
+            // Update client connection with session token
+            {
+                let mut clients_guard = clients.write().await;
+                if let Some(conn) = clients_guard.get_mut(client_id) {
+                    conn.session_token = Some(session_token.clone());
+                }
+            }
+            
+            info!("🎮 Session started for player: {}", player_name);
+            
+            send_to_client(
+                clients,
+                client_id,
+                &ServerMessage::SessionStarted {
+                    session_token: session_token.clone(),
+                },
+            )
+            .await;
+        }
+        ClientMessage::AnimalEaten {
+            animal_id,
+            animal_value,
+        } => {
+            // Get session token from client connection
+            let session_token = {
+                let clients_guard = clients.read().await;
+                clients_guard
+                    .get(client_id)
+                    .and_then(|conn| conn.session_token.clone())
+            };
+            
+            let Some(session_token) = session_token else {
+                send_to_client(
+                    clients,
+                    client_id,
+                    &ServerMessage::InvalidAction {
+                        reason: "No active session".to_string(),
+                    },
+                )
+                .await;
+                return;
+            };
+            
+            // Update session
+            let mut sessions_guard = sessions.write().await;
+            let Some(session) = sessions_guard.get_mut(&session_token) else {
+                drop(sessions_guard);
+                send_to_client(
+                    clients,
+                    client_id,
+                    &ServerMessage::InvalidAction {
+                        reason: "Invalid session".to_string(),
+                    },
+                )
+                .await;
+                return;
+            };
+            
+            // Anti-cheat checks
+            let now = Instant::now();
+            
+            // Check for duplicate animal ID
+            if session.eaten_animals.contains_key(&animal_id) {
+                session.suspicious_activity += 1;
+                warn!(
+                    "⚠️ Duplicate animal {} from player {}",
+                    animal_id, session.player_name
+                );
+                drop(sessions_guard);
+                send_to_client(
+                    clients,
+                    client_id,
+                    &ServerMessage::InvalidAction {
+                        reason: "Duplicate animal".to_string(),
+                    },
+                )
+                .await;
+                return;
+            }
+            
+            // Check eating rate (max 5 animals per second sustained)
+            let time_since_last = now.duration_since(session.last_animal_eaten).as_secs_f64();
+            if time_since_last < 0.2 {
+                session.suspicious_activity += 1;
+                warn!(
+                    "⚠️ Too fast eating rate from player {}: {:.2}s",
+                    session.player_name, time_since_last
+                );
+            }
+            
+            // Check value reasonableness (max 10000 per animal)
+            if animal_value > 10000.0 || animal_value < 0.0 {
+                session.suspicious_activity += 1;
+                warn!(
+                    "⚠️ Unreasonable animal value {} from player {}",
+                    animal_value, session.player_name
+                );
+                drop(sessions_guard);
+                send_to_client(
+                    clients,
+                    client_id,
+                    &ServerMessage::InvalidAction {
+                        reason: "Invalid animal value".to_string(),
+                    },
+                )
+                .await;
+                return;
+            }
+            
+            // Check session duration vs score (max 1000 per minute average)
+            let session_minutes = now.duration_since(session.session_start).as_secs() as f64 / 60.0;
+            let max_reasonable_score = session_minutes * 1000.0 + 500.0; // Some buffer
+            if session.score + animal_value > max_reasonable_score {
+                session.suspicious_activity += 1;
+                warn!(
+                    "⚠️ Score too high for session duration: {} in {} minutes",
+                    session.score + animal_value,
+                    session_minutes
+                );
+            }
+            
+            // Ban if too suspicious
+            if session.suspicious_activity > 10 {
+                error!("🚫 Banning player {} for suspicious activity", session.player_name);
+                drop(sessions_guard);
+                send_to_client(
+                    clients,
+                    client_id,
+                    &ServerMessage::InvalidAction {
+                        reason: "Session terminated due to suspicious activity".to_string(),
+                    },
+                )
+                .await;
+                return;
+            }
+            
+            // Update session
+            session.eaten_animals.insert(animal_id, now);
+            session.score += animal_value;
+            session.animals_eaten += 1;
+            session.last_animal_eaten = now;
+            session.last_update = now;
+            session.update_count += 1;
+            
+            // Rate limit updates to leaderboard (max once per 5 seconds)
+            if session.update_count % 10 == 0 {
+                let player_name = session.player_name.clone();
+                let score = session.score;
+                let animals_eaten = session.animals_eaten;
+                drop(sessions_guard);
                 
-                broadcast_message(clients, &update_msg).await;
+                // Update leaderboard
+                if let Err(e) = update_leaderboard(redis_conn, &player_name, score, animals_eaten).await {
+                    error!("Failed to update leaderboard: {:?}", e);
+                    return;
+                }
                 
-                // If player is in top 20, broadcast updated leaderboard
-                if rank <= 20 {
-                    if let Ok(leaderboard) = get_leaderboard(redis_conn).await {
-                        let leaderboard_msg = ServerMessage::Leaderboard {
-                            entries: leaderboard,
-                        };
-                        broadcast_message(clients, &leaderboard_msg).await;
+                // Get rank and notify
+                if let Ok(rank) = get_player_rank(redis_conn, &player_name).await {
+                    let update_msg = ServerMessage::ScoreUpdated {
+                        player_name: player_name.clone(),
+                        rank,
+                        score,
+                    };
+                    send_to_client(clients, client_id, &update_msg).await;
+                    
+                    // Broadcast leaderboard if in top 20
+                    if rank <= 20 {
+                        if let Ok(leaderboard) = get_leaderboard(redis_conn).await {
+                            let leaderboard_msg = ServerMessage::Leaderboard {
+                                entries: leaderboard,
+                            };
+                            broadcast_message(clients, &leaderboard_msg).await;
+                        }
+                    }
+                }
+            } else {
+                drop(sessions_guard);
+            }
+        }
+        ClientMessage::PlayerDied => {
+            // Get session and finalize score
+            let session_token = {
+                let clients_guard = clients.read().await;
+                clients_guard
+                    .get(client_id)
+                    .and_then(|conn| conn.session_token.clone())
+            };
+            
+            if let Some(session_token) = session_token {
+                let mut sessions_guard = sessions.write().await;
+                if let Some(session) = sessions_guard.remove(&session_token) {
+                    info!(
+                        "💀 Player {} died - Final score: {}, Animals: {}",
+                        session.player_name, session.score, session.animals_eaten
+                    );
+                    
+                    // Final leaderboard update
+                    if session.suspicious_activity <= 5 {  // Only if not too suspicious
+                        drop(sessions_guard);
+                        if let Err(e) = update_leaderboard(
+                            redis_conn,
+                            &session.player_name,
+                            session.score,
+                            session.animals_eaten,
+                        )
+                        .await
+                        {
+                            error!("Failed to update final leaderboard: {:?}", e);
+                        }
                     }
                 }
             }
@@ -433,8 +718,25 @@ async fn handle_client_message(
                 let leaderboard_msg = ServerMessage::Leaderboard {
                     entries: leaderboard,
                 };
-                broadcast_message(clients, &leaderboard_msg).await;
+                send_to_client(clients, client_id, &leaderboard_msg).await;
             }
+        }
+    }
+}
+
+async fn send_to_client(clients: &Clients, client_id: &str, msg: &ServerMessage) {
+    let message = match serde_json::to_string(msg) {
+        Ok(json) => Message::text(json),
+        Err(e) => {
+            error!("Failed to serialize message: {:?}", e);
+            return;
+        }
+    };
+    
+    let clients_guard = clients.read().await;
+    if let Some(conn) = clients_guard.get(client_id) {
+        if conn.tx.send(message).is_err() {
+            warn!("Failed to send message to client {}", client_id);
         }
     }
 }
@@ -527,8 +829,8 @@ async fn broadcast_message(clients: &Clients, msg: &ServerMessage) {
     let clients_guard = clients.read().await;
     let mut disconnected = Vec::new();
     
-    for (id, tx) in clients_guard.iter() {
-        if tx.send(message.clone()).is_err() {
+    for (id, conn) in clients_guard.iter() {
+        if conn.tx.send(message.clone()).is_err() {
             disconnected.push(id.clone());
         }
     }
