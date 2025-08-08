@@ -2,7 +2,7 @@
 let scene, camera, renderer;
 let particles = [];
 let isPaused = false;
-let ws = null;
+// WebSocket handled by websocket.js
 let gameOver = false;
 let moneyCollected = 0;
 
@@ -4040,101 +4040,71 @@ function exitToGarden() {
 
 // Removed old bird flight physics function
 
-// WebSocket connection
+// Setup WebSocket event listeners
+function setupWebSocketListeners() {
+    // Listen for status changes
+    wsManager.addEventListener('status:change', (event) => {
+        const statusEl = document.getElementById('status');
+        const { status } = event.detail;
+        
+        switch(status) {
+            case 'connected':
+                statusEl.textContent = 'Connected';
+                statusEl.className = 'connected';
+                break;
+            case 'connecting':
+                statusEl.textContent = 'Connecting...';
+                statusEl.className = 'connecting';
+                break;
+            case 'disconnected':
+                statusEl.textContent = 'Disconnected';
+                statusEl.className = 'disconnected';
+                break;
+            case 'error':
+                statusEl.textContent = 'Error';
+                statusEl.className = 'error';
+                break;
+            case 'simulating':
+                statusEl.textContent = 'Simulating';
+                statusEl.className = 'connected';
+                break;
+        }
+    });
+    
+    // Listen for transactions
+    wsManager.addEventListener('transaction', (event) => {
+        const data = event.detail;
+        
+        // Add transaction to the visualization
+        addTransaction(data);
+        
+        // Update statistics
+        stats.transactions++;
+        stats.volume += parseFloat(data.amount) || 0;
+        updateStats();
+    });
+    
+    // Listen for connection events
+    wsManager.addEventListener('connection:open', () => {
+        console.log('WebSocket connected');
+    });
+    
+    wsManager.addEventListener('connection:close', () => {
+        console.log('WebSocket disconnected');
+    });
+    
+    wsManager.addEventListener('connection:error', (event) => {
+        console.error('WebSocket error:', event.detail);
+    });
+}
+
+// Connection control functions (delegates to wsManager)
 function connectWebSocket() {
-    const statusEl = document.getElementById('status');
-    
-    // For now, we'll simulate transactions since WebSocket server isn't implemented yet
-    statusEl.textContent = 'Simulating';
-    statusEl.className = 'connected';
-    
-    // Simulate random transactions
-    simulateTransactions();
-    
-    // Actual WebSocket code (to be used when server is ready):
-    /*
-    ws = new WebSocket('ws://localhost:8080');
-    
-    ws.onopen = () => {
-        statusEl.textContent = 'Connected';
-        statusEl.className = 'connected';
-        console.log('Connected to WebSocket server');
-    };
-    
-    ws.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            addTransaction(data);
-        } catch (error) {
-            console.error('Error parsing message:', error);
-        }
-    };
-    
-    ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        statusEl.textContent = 'Error';
-        statusEl.className = 'error';
-    };
-    
-    ws.onclose = () => {
-        statusEl.textContent = 'Disconnected';
-        statusEl.className = 'disconnected';
-        console.log('Disconnected from WebSocket server');
-        ws = null;
-    };
-    */
+    wsManager.connect();
 }
 
-// Simulate transactions for testing
-function simulateTransactions() {
-    if (isPaused || !ws === null) return;
-    
-    // Random chance to create a transaction
-    if (Math.random() < 0.3) {
-        const stablecoins = ['USDC', 'USDT', 'DAI'];
-        const stablecoin = stablecoins[Math.floor(Math.random() * stablecoins.length)];
-        
-        // Generate different amount ranges for variety
-        let amount;
-        const rand = Math.random();
-        if (rand < 0.6) {
-            // 60% small transactions (1-1000)
-            amount = (Math.random() * 999 + 1).toFixed(2);
-        } else if (rand < 0.85) {
-            // 25% medium transactions (1000-10000)
-            amount = (Math.random() * 9000 + 1000).toFixed(2);
-        } else if (rand < 0.95) {
-            // 10% large transactions (10000-50000)
-            amount = (Math.random() * 40000 + 10000).toFixed(2);
-        } else {
-            // 5% whale transactions (50000-500000)
-            amount = (Math.random() * 450000 + 50000).toFixed(2);
-        }
-        
-        const transaction = {
-            stablecoin: stablecoin,
-            amount: amount,
-            from: '0x' + Math.random().toString(16).substr(2, 40),
-            to: '0x' + Math.random().toString(16).substr(2, 40)
-        };
-        
-        addTransaction(transaction);
-    }
-    
-    // Continue simulating
-    setTimeout(simulateTransactions, Math.random() * 1000 + 200);
-}
-
-// Disconnect WebSocket
 function disconnectWebSocket() {
-    if (ws) {
-        ws.close();
-        ws = null;
-    }
-    
-    const statusEl = document.getElementById('status');
-    statusEl.textContent = 'Disconnected';
-    statusEl.className = 'disconnected';
+    wsManager.disconnect();
 }
 
 // Clear all entities (keep border trees but remove fruits, clear animals)
@@ -4183,13 +4153,8 @@ function setupEventListeners() {
     clearBtn.addEventListener('click', clearParticles);
     
     connectBtn.addEventListener('click', () => {
-        if (ws === null) {
-            connectWebSocket();
-            connectBtn.textContent = 'Disconnect';
-        } else {
-            disconnectWebSocket();
-            connectBtn.textContent = 'Connect';
-        }
+        const isConnecting = wsManager.toggle();
+        connectBtn.textContent = isConnecting ? 'Disconnect' : 'Connect';
     });
     
     playBtn.addEventListener('click', () => {
@@ -4421,6 +4386,7 @@ document.addEventListener('DOMContentLoaded', () => {
     init();
     animate();
     setupEventListeners();
+    setupWebSocketListeners();
 });
 
 // Make game functions globally accessible for HTML buttons

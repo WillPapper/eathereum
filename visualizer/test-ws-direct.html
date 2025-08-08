@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Direct WebSocket Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 20px;
+        }
+        #log {
+            height: 500px;
+            overflow-y: auto;
+            border: 1px solid #00ff00;
+            padding: 10px;
+            background: #0a0a0a;
+            white-space: pre-wrap;
+        }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: monospace;
+            font-weight: bold;
+        }
+        button:hover { background: #00cc00; }
+        .error { color: #ff0000; }
+        .success { color: #00ff00; }
+        .info { color: #00ffff; }
+        .data { color: #ffff00; }
+    </style>
+</head>
+<body>
+    <h1>Direct WebSocket Test</h1>
+    
+    <div>
+        <button onclick="testProduction()">Test Production Server</button>
+        <button onclick="testLocal()">Test Local Server</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+    
+    <div id="log"></div>
+    
+    <script>
+        const log = document.getElementById('log');
+        let ws = null;
+        
+        function addLog(message, className = '') {
+            const timestamp = new Date().toLocaleTimeString();
+            const span = document.createElement('span');
+            span.className = className;
+            span.textContent = `[${timestamp}] ${message}\n`;
+            log.appendChild(span);
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function testProduction() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            
+            const url = 'wss://game-server-i4ne.onrender.com/ws';
+            addLog(`Attempting to connect to: ${url}`, 'info');
+            
+            try {
+                ws = new WebSocket(url);
+                
+                ws.onopen = function() {
+                    addLog('✅ WebSocket connected successfully!', 'success');
+                    addLog('Waiting for data from the game server...', 'info');
+                };
+                
+                ws.onmessage = function(event) {
+                    addLog('📦 Message received:', 'success');
+                    try {
+                        const data = JSON.parse(event.data);
+                        addLog(JSON.stringify(data, null, 2), 'data');
+                    } catch (e) {
+                        addLog(`Raw data: ${event.data}`, 'data');
+                    }
+                };
+                
+                ws.onerror = function(error) {
+                    addLog(`❌ WebSocket error: ${error}`, 'error');
+                    console.error('WebSocket error:', error);
+                };
+                
+                ws.onclose = function(event) {
+                    addLog(`WebSocket closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`, 'error');
+                    ws = null;
+                };
+                
+            } catch (error) {
+                addLog(`❌ Failed to create WebSocket: ${error.message}`, 'error');
+            }
+        }
+        
+        function testLocal() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            
+            const url = 'ws://localhost:8080/ws';
+            addLog(`Attempting to connect to: ${url}`, 'info');
+            
+            try {
+                ws = new WebSocket(url);
+                
+                ws.onopen = function() {
+                    addLog('✅ WebSocket connected successfully!', 'success');
+                    addLog('Waiting for data from the local server...', 'info');
+                };
+                
+                ws.onmessage = function(event) {
+                    addLog('📦 Message received:', 'success');
+                    try {
+                        const data = JSON.parse(event.data);
+                        addLog(JSON.stringify(data, null, 2), 'data');
+                    } catch (e) {
+                        addLog(`Raw data: ${event.data}`, 'data');
+                    }
+                };
+                
+                ws.onerror = function(error) {
+                    addLog(`❌ WebSocket error: ${error}`, 'error');
+                    console.error('WebSocket error:', error);
+                };
+                
+                ws.onclose = function(event) {
+                    addLog(`WebSocket closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`, 'error');
+                    ws = null;
+                };
+                
+            } catch (error) {
+                addLog(`❌ Failed to create WebSocket: ${error.message}`, 'error');
+            }
+        }
+        
+        function clearLog() {
+            log.innerHTML = '';
+            addLog('Log cleared', 'info');
+        }
+        
+        // Initial message
+        addLog('Direct WebSocket tester ready', 'success');
+        addLog('This tests the raw WebSocket connection without any wrapper code', 'info');
+        addLog('Open the browser console (F12) for additional error details', 'info');
+    </script>
+</body>
+</html>
