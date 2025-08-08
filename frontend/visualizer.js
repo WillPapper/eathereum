@@ -1745,11 +1745,41 @@ function checkCollisions() {
         const collisionDistance = playerRadius + animal.size;
         
         if (distance < collisionDistance) {
-            if (animal.size < playerControls.size * 1.2) {
-                // Eat smaller and similar-sized animals (changed from 0.8 to 1.2)
+            // Check size ratio for collision outcome
+            const sizeRatio = animal.size / playerControls.size;
+            
+            if (sizeRatio < 0.95) {
+                // Clearly smaller - eat it
                 eatAnimal(animal, i);
-            } else {
-                // Eaten by larger animal - lose a life or game over
+            } else if (sizeRatio >= 0.95 && sizeRatio <= 1.05) {
+                // Similar size (within 5%) - bounce off each other
+                const pushDirection = new THREE.Vector3()
+                    .subVectors(playerPos, animal.mesh.position)
+                    .normalize();
+                
+                // Push both away from each other
+                const pushForce = (collisionDistance - distance) * 0.5;
+                playerControls.mesh.position.add(pushDirection.multiplyScalar(pushForce));
+                animal.mesh.position.add(pushDirection.multiplyScalar(-pushForce));
+                
+                // Add some lateral movement to help unstick
+                const lateralPush = new THREE.Vector3(-pushDirection.z, 0, pushDirection.x);
+                animal.velocity.add(lateralPush.multiplyScalar(2));
+                
+                console.log(`⚡ Bounced off similar-sized ${animal.animalType} (ratio: ${sizeRatio.toFixed(2)})`);
+            } else if (sizeRatio > 1.05 && sizeRatio < 1.2) {
+                // Slightly larger but still edible - try to eat but with resistance
+                if (Math.random() < 0.7) { // 70% chance to succeed
+                    eatAnimal(animal, i);
+                } else {
+                    // Bounce off
+                    const pushDirection = new THREE.Vector3()
+                        .subVectors(playerPos, animal.mesh.position)
+                        .normalize();
+                    playerControls.mesh.position.add(pushDirection.multiplyScalar((collisionDistance - distance) * 0.3));
+                }
+            } else if (sizeRatio >= 1.2) {
+                // Clearly larger - death
                 handlePlayerDeath();
                 return;
             }
