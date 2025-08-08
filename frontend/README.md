@@ -16,9 +16,6 @@ Three.js-based game client that visualizes stablecoin transactions as a competit
 frontend/
 ├── index.html              # Main HTML with UI elements
 ├── styles.css              # Game styling and UI
-├── visualizer.js           # Legacy file (DO NOT DELETE - contains features being migrated)
-├── websocket.js            # Legacy file (DO NOT DELETE - contains SpawnQueue system)
-├── MIGRATION.md            # Tracks migration progress from legacy to modular
 └── js/                     # Refactored modular architecture
     ├── main.js             # Application entry point and orchestration
     ├── config.js           # Centralized configuration constants

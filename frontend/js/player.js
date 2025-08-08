@@ -21,13 +21,178 @@ export class PlayerController {
             speed: CONFIG.PLAYER.BASE_SPEED
         };
         
+        // Mobile controls
+        this.isMobile = this.detectMobile();
+        this.touchStartPos = null;
+        this.touchCurrentPos = null;
+        this.touchJoystick = {
+            active: false,
+            baseX: 0,
+            baseY: 0,
+            stickX: 0,
+            stickY: 0
+        };
+        
         this.setupEventListeners();
+        if (this.isMobile) {
+            this.setupMobileControls();
+        }
+    }
+    
+    detectMobile() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+               ('ontouchstart' in window) ||
+               (navigator.maxTouchPoints > 0);
     }
     
     setupEventListeners() {
         document.addEventListener('keydown', (e) => this.onKeyDown(e));
         document.addEventListener('keyup', (e) => this.onKeyUp(e));
         document.addEventListener('mousemove', (e) => this.onMouseMove(e));
+    }
+    
+    setupMobileControls() {
+        // Touch events for mobile
+        document.addEventListener('touchstart', (e) => this.onTouchStart(e));
+        document.addEventListener('touchmove', (e) => this.onTouchMove(e));
+        document.addEventListener('touchend', (e) => this.onTouchEnd(e));
+        
+        // Create virtual joystick UI
+        this.createVirtualJoystick();
+    }
+    
+    createVirtualJoystick() {
+        // Create joystick container
+        const joystickContainer = document.createElement('div');
+        joystickContainer.id = 'virtual-joystick';
+        joystickContainer.style.cssText = `
+            position: fixed;
+            bottom: 50px;
+            left: 50px;
+            width: 150px;
+            height: 150px;
+            z-index: 1000;
+            opacity: 0.7;
+            display: none;
+        `;
+        
+        // Joystick base
+        const joystickBase = document.createElement('div');
+        joystickBase.style.cssText = `
+            position: absolute;
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            border: 3px solid rgba(255, 255, 255, 0.5);
+        `;
+        
+        // Joystick stick
+        const joystickStick = document.createElement('div');
+        joystickStick.id = 'joystick-stick';
+        joystickStick.style.cssText = `
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.7);
+            left: 45px;
+            top: 45px;
+            transition: none;
+        `;
+        
+        joystickContainer.appendChild(joystickBase);
+        joystickContainer.appendChild(joystickStick);
+        document.body.appendChild(joystickContainer);
+        
+        this.joystickElement = joystickContainer;
+        this.joystickStick = joystickStick;
+    }
+    
+    onTouchStart(event) {
+        if (!this.controls.isPlaying) return;
+        
+        const touch = event.touches[0];
+        this.touchStartPos = { x: touch.clientX, y: touch.clientY };
+        this.touchCurrentPos = { x: touch.clientX, y: touch.clientY };
+        
+        // Show joystick at touch position if on left side of screen
+        if (touch.clientX < window.innerWidth / 2) {
+            this.touchJoystick.active = true;
+            this.touchJoystick.baseX = touch.clientX;
+            this.touchJoystick.baseY = touch.clientY;
+            
+            if (this.joystickElement) {
+                this.joystickElement.style.display = 'block';
+                this.joystickElement.style.left = (touch.clientX - 75) + 'px';
+                this.joystickElement.style.top = (touch.clientY - 75) + 'px';
+            }
+        }
+        
+        event.preventDefault();
+    }
+    
+    onTouchMove(event) {
+        if (!this.controls.isPlaying || !this.touchJoystick.active) return;
+        
+        const touch = event.touches[0];
+        this.touchCurrentPos = { x: touch.clientX, y: touch.clientY };
+        
+        // Calculate joystick offset
+        const deltaX = touch.clientX - this.touchJoystick.baseX;
+        const deltaY = touch.clientY - this.touchJoystick.baseY;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        const maxDistance = 60;
+        
+        // Limit stick movement
+        let stickX = deltaX;
+        let stickY = deltaY;
+        if (distance > maxDistance) {
+            stickX = (deltaX / distance) * maxDistance;
+            stickY = (deltaY / distance) * maxDistance;
+        }
+        
+        this.touchJoystick.stickX = stickX / maxDistance;
+        this.touchJoystick.stickY = stickY / maxDistance;
+        
+        // Update visual joystick
+        if (this.joystickStick) {
+            this.joystickStick.style.left = (45 + stickX) + 'px';
+            this.joystickStick.style.top = (45 + stickY) + 'px';
+        }
+        
+        // Update movement controls based on joystick
+        this.controls.moveForward = this.touchJoystick.stickY < -0.3;
+        this.controls.moveBackward = this.touchJoystick.stickY > 0.3;
+        this.controls.moveLeft = this.touchJoystick.stickX < -0.3;
+        this.controls.moveRight = this.touchJoystick.stickX > 0.3;
+        
+        event.preventDefault();
+    }
+    
+    onTouchEnd(event) {
+        this.touchJoystick.active = false;
+        this.touchJoystick.stickX = 0;
+        this.touchJoystick.stickY = 0;
+        
+        // Reset controls
+        this.controls.moveForward = false;
+        this.controls.moveBackward = false;
+        this.controls.moveLeft = false;
+        this.controls.moveRight = false;
+        
+        // Hide joystick
+        if (this.joystickElement) {
+            this.joystickElement.style.display = 'none';
+        }
+        
+        // Reset stick position
+        if (this.joystickStick) {
+            this.joystickStick.style.left = '45px';
+            this.joystickStick.style.top = '45px';
+        }
+        
+        event.preventDefault();
     }
     
     onKeyDown(event) {

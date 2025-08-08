@@ -236,7 +236,131 @@ class StablecoinVisualizer {
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         window.game = new StablecoinVisualizer();
+        setupDebugCommands();
     });
 } else {
     window.game = new StablecoinVisualizer();
+    setupDebugCommands();
+}
+
+// Debug console commands for development
+function setupDebugCommands() {
+    // Configure spawn queue
+    window.configureSpawnQueue = function(options) {
+        if (window.game && window.game.entityManager) {
+            window.game.entityManager.spawnQueue.configure(options);
+            console.log('Spawn queue configured:', window.game.entityManager.spawnQueue.getStats());
+        }
+    };
+    
+    // Get spawn queue statistics
+    window.getSpawnQueueStats = function() {
+        if (window.game && window.game.entityManager) {
+            return window.game.entityManager.spawnQueue.getStats();
+        }
+        return null;
+    };
+    
+    // Spawn test animal
+    window.spawnTestAnimal = function(size = 1) {
+        if (window.game && window.game.entityManager) {
+            const testData = {
+                stablecoin: 'USDC',
+                amount: Math.pow(10, size).toString(),
+                from: '0xtest',
+                to: '0xtest',
+                block_number: 0,
+                tx_hash: '0xtest'
+            };
+            window.game.entityManager.addAnimal(testData);
+            console.log('Spawned test animal with size:', size);
+        }
+    };
+    
+    // Spawn test plant
+    window.spawnTestPlant = function(amount = 10000) {
+        if (window.game && window.game.entityManager) {
+            const testData = {
+                stablecoin: 'DAI',
+                amount: amount.toString(),
+                from: '0xtest',
+                to: '0xtest',
+                block_number: 0,
+                tx_hash: '0xtest'
+            };
+            window.game.entityManager.addPlant(testData);
+            console.log('Spawned test plant with amount:', amount);
+        }
+    };
+    
+    // Set player size
+    window.setPlayerSize = function(size) {
+        if (window.game && window.game.playerController) {
+            window.game.playerController.setSize(size);
+            console.log('Player size set to:', size);
+        }
+    };
+    
+    // Set difficulty level
+    window.setDifficulty = function(level) {
+        if (window.game && window.game.gameState) {
+            window.game.gameState.difficultyLevel = level;
+            console.log('Difficulty set to:', level);
+        }
+    };
+    
+    // Clear all entities
+    window.clearAll = function() {
+        if (window.game && window.game.entityManager) {
+            window.game.clearEntities();
+            console.log('All entities cleared');
+        }
+    };
+    
+    // Get game statistics
+    window.getGameStats = function() {
+        if (window.game && window.game.gameState) {
+            return {
+                score: window.game.gameState.currentScore,
+                lives: window.game.gameState.lives,
+                playTime: window.game.gameState.getPlayTime(),
+                difficulty: window.game.gameState.difficultyLevel,
+                stats: window.game.gameState.stats,
+                spawnQueue: window.game.entityManager.spawnQueue.getStats()
+            };
+        }
+        return null;
+    };
+    
+    // Performance monitoring
+    window.getPerformanceStats = function() {
+        if (window.game) {
+            return {
+                fps: window.game.gameLoop.fps,
+                entities: {
+                    plants: window.game.entityManager.plants.length,
+                    animals: window.game.entityManager.animals.length,
+                    powerUps: window.game.entityManager.powerUpFruits.length
+                },
+                memory: performance.memory ? {
+                    used: Math.round(performance.memory.usedJSHeapSize / 1048576) + ' MB',
+                    total: Math.round(performance.memory.totalJSHeapSize / 1048576) + ' MB'
+                } : 'Not available'
+            };
+        }
+        return null;
+    };
+    
+    console.log(`
+🎮 Debug Commands Available:
+- configureSpawnQueue({spawnDelay: 1000}) - Configure spawn settings
+- getSpawnQueueStats() - View spawn queue statistics
+- spawnTestAnimal(size) - Spawn test animal
+- spawnTestPlant(amount) - Spawn test plant
+- setPlayerSize(size) - Set player size
+- setDifficulty('normal'|'survival'|'alliance') - Set difficulty
+- clearAll() - Clear all entities
+- getGameStats() - Get current game statistics
+- getPerformanceStats() - Get performance metrics
+    `);
 }

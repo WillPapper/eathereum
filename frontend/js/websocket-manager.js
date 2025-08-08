@@ -77,22 +77,24 @@ export class WebSocketManager {
             window.game.gameState.updateStats(data.stablecoin, 1);
         }
         
-        // Add entity to the game
+        // Queue entity for controlled spawning
         if (this.entityManager) {
-            const amount = parseFloat(data.amount);
-            
-            // Large transactions become plants/trees
-            if (amount > 1000) {
-                this.entityManager.addPlant(data);
-            }
-            // Small transactions become animals
-            else {
-                this.entityManager.addAnimal(data);
-            }
+            this.entityManager.queueTransaction(data);
         }
         
         // Update transaction feed UI
         this.updateTransactionFeed(data);
+        
+        // Update queue counter in UI
+        this.updateQueueCounter();
+    }
+    
+    updateQueueCounter() {
+        const queueCount = document.getElementById('queue-count');
+        if (queueCount && this.entityManager) {
+            const stats = this.entityManager.spawnQueue.getStats();
+            queueCount.textContent = stats.queueLength;
+        }
     }
     
     updateTransactionFeed(data) {
