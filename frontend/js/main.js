@@ -351,6 +351,7 @@ function setupDebugCommands() {
         return null;
     };
     
+    
     console.log(`
 🎮 Debug Commands Available:
 - configureSpawnQueue({spawnDelay: 1000}) - Configure spawn settings

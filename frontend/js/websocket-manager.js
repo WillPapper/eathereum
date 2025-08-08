@@ -24,17 +24,7 @@ export class WebSocketManager {
     }
     
     getWebSocketUrl() {
-        // Check for environment-specific URL
-        if (window.WS_URL) {
-            return window.WS_URL;
-        }
-        
-        // Default to local development
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.hostname || 'localhost';
-        const port = '8080';
-        
-        return `${protocol}//${host}:${port}/ws`;
+        return 'wss://game-server-i4ne.onrender.com/ws';
     }
     
     setupEventHandlers() {
