@@ -2913,95 +2913,127 @@ function findOptimalLeverageFruitSpawnPosition() {
     return null;
 }
 
-// Show leverage fruit notification
-function showLeverageFruitNotification() {
+// Global notification management
+let activeNotifications = [];
+let notificationOffset = 0;
+
+// Unified fruit notification system
+function showFruitNotification(config) {
+    const isMobile = window.innerWidth <= 768;
+    
     const notification = document.createElement('div');
+    notification.className = 'fruit-notification';
+    
+    // Calculate position based on existing notifications
+    const baseTop = isMobile ? 60 : 20; // Start lower on mobile to avoid overlap with UI
+    const spacing = isMobile ? 70 : 60; // More spacing on mobile
+    const currentTop = baseTop + (activeNotifications.length * spacing);
+    
     notification.style.cssText = `
         position: fixed;
-        top: 20px;
-        left: 20px;
-        background: linear-gradient(135deg, #FFD700, #FF8C00);
-        color: black;
-        padding: 15px 25px;
+        top: ${currentTop}px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: ${config.gradient};
+        color: ${config.textColor};
+        padding: ${isMobile ? '12px 20px' : '15px 25px'};
         border-radius: 10px;
-        font-size: 16px;
+        font-size: ${isMobile ? '14px' : '16px'};
         font-weight: bold;
         z-index: 1000;
-        animation: slideInLeft 0.5s ease-out;
-        box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4);
-        border: 2px solid #FF8C00;
+        animation: slideDown 0.5s ease-out;
+        box-shadow: 0 5px 20px ${config.shadowColor};
+        border: 2px solid ${config.borderColor};
+        max-width: ${isMobile ? '90%' : 'auto'};
+        text-align: center;
+        white-space: ${isMobile ? 'normal' : 'nowrap'};
     `;
-    notification.textContent = '⚡ Leverage Fruit Spawned! Double your size!';
+    notification.textContent = config.text;
     
-    // Add CSS animation
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes slideInLeft {
-            from { transform: translateX(-100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-    `;
-    document.head.appendChild(style);
+    // Add CSS animation if not already present
+    if (!document.getElementById('fruit-notification-styles')) {
+        const style = document.createElement('style');
+        style.id = 'fruit-notification-styles';
+        style.textContent = `
+            @keyframes slideDown {
+                from { 
+                    transform: translateX(-50%) translateY(-100%); 
+                    opacity: 0; 
+                }
+                to { 
+                    transform: translateX(-50%) translateY(0); 
+                    opacity: 1; 
+                }
+            }
+            @keyframes slideUp {
+                from { 
+                    transform: translateX(-50%) translateY(0); 
+                    opacity: 1; 
+                }
+                to { 
+                    transform: translateX(-50%) translateY(-100%); 
+                    opacity: 0; 
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
     
     document.body.appendChild(notification);
+    activeNotifications.push(notification);
     
     // Remove notification after 4 seconds
     setTimeout(() => {
         if (notification.parentNode) {
-            notification.style.animation = 'slideInLeft 0.5s ease-in reverse';
+            notification.style.animation = 'slideUp 0.5s ease-in';
             setTimeout(() => {
                 if (notification.parentNode) {
                     document.body.removeChild(notification);
-                }
-                if (style.parentNode) {
-                    document.head.removeChild(style);
+                    // Remove from active notifications and reposition others
+                    const index = activeNotifications.indexOf(notification);
+                    if (index > -1) {
+                        activeNotifications.splice(index, 1);
+                        repositionNotifications();
+                    }
                 }
             }, 500);
         }
     }, 4000);
 }
 
+// Reposition remaining notifications after one is removed
+function repositionNotifications() {
+    const isMobile = window.innerWidth <= 768;
+    const baseTop = isMobile ? 60 : 20;
+    const spacing = isMobile ? 70 : 60;
+    
+    activeNotifications.forEach((notification, index) => {
+        const newTop = baseTop + (index * spacing);
+        notification.style.transition = 'top 0.3s ease-out';
+        notification.style.top = `${newTop}px`;
+    });
+}
+
+// Show leverage fruit notification
+function showLeverageFruitNotification() {
+    showFruitNotification({
+        text: '⚡ Leverage Fruit Spawned! Double your size!',
+        gradient: 'linear-gradient(135deg, #FFD700, #FF8C00)',
+        borderColor: '#FF8C00',
+        shadowColor: 'rgba(255, 215, 0, 0.4)',
+        textColor: 'black'
+    });
+}
+
 // Show power-up notification
 function showPowerUpNotification() {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, #FF69B4, #FF1493);
-        color: white;
-        padding: 15px 25px;
-        border-radius: 10px;
-        font-size: 16px;
-        font-weight: bold;
-        z-index: 1000;
-        animation: slideIn 0.5s ease-out;
-        box-shadow: 0 5px 20px rgba(255, 105, 180, 0.4);
-    `;
-    notification.textContent = '💖 Life Fruit Spawned! Find the glowing fruit!';
-    
-    // Add CSS animation
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-    `;
-    document.head.appendChild(style);
-    
-    document.body.appendChild(notification);
-    
-    // Remove notification after 4 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.style.animation = 'slideIn 0.5s ease-in reverse';
-            setTimeout(() => {
-                document.body.removeChild(notification);
-                document.head.removeChild(style);
-            }, 500);
-        }
-    }, 4000);
+    showFruitNotification({
+        text: '💖 Life Fruit Spawned! Find the glowing fruit!',
+        gradient: 'linear-gradient(135deg, #FF69B4, #FF1493)',
+        borderColor: '#FF1493',
+        shadowColor: 'rgba(255, 105, 180, 0.4)',
+        textColor: 'white'
+    });
 }
 
 // Create a speedrun fruit (speed doubling fruit)
@@ -3142,50 +3174,13 @@ function findOptimalSpeedrunFruitSpawnPosition() {
 
 // Show speedrun fruit notification
 function showSpeedrunFruitNotification() {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 80px;
-        left: 20px;
-        background: linear-gradient(135deg, #00FFFF, #0088FF);
-        color: black;
-        padding: 15px 25px;
-        border-radius: 10px;
-        font-size: 16px;
-        font-weight: bold;
-        z-index: 1000;
-        animation: slideInLeft 0.5s ease-out;
-        box-shadow: 0 5px 20px rgba(0, 255, 255, 0.4);
-        border: 2px solid #0088FF;
-    `;
-    notification.textContent = '⚡ Speedrun Fruit Spawned! Double your speed!';
-    
-    // Add CSS animation
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes slideInLeft {
-            from { transform: translateX(-100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-    `;
-    document.head.appendChild(style);
-    
-    document.body.appendChild(notification);
-    
-    // Remove notification after 4 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.style.animation = 'slideInLeft 0.5s ease-in reverse';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    document.body.removeChild(notification);
-                }
-                if (style.parentNode) {
-                    document.head.removeChild(style);
-                }
-            }, 500);
-        }
-    }, 4000);
+    showFruitNotification({
+        text: '💨 Speedrun Fruit Spawned! Double your speed!',
+        gradient: 'linear-gradient(135deg, #00FFFF, #0088FF)',
+        borderColor: '#0088FF',
+        shadowColor: 'rgba(0, 255, 255, 0.4)',
+        textColor: 'black'
+    });
 }
 
 // Update speedrun fruits (physics, expiration, collection)
