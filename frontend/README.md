@@ -10,84 +10,14 @@ Three.js-based game client that visualizes stablecoin transactions as a competit
 - **WebSocket Client**: Receives real-time transaction data
 - **Game Engine**: Collision detection, physics, scoring
 - **UI Layer**: Trading feed, stats, controls
-### File Structure
 
-```
-frontend/
-├── index.html              # Main HTML with UI elements
-├── styles.css              # Game styling and UI
-├── visualizer.js           # Legacy file (DO NOT DELETE - contains features being migrated)
-├── websocket.js            # Legacy file (DO NOT DELETE - contains SpawnQueue system)
-├── MIGRATION.md            # Tracks migration progress from legacy to modular
-└── js/                     # Refactored modular architecture
-    ├── main.js             # Application entry point and orchestration
-    ├── config.js           # Centralized configuration constants
-    ├── player.js           # Player controller and input handling
-    ├── game-state.js       # Game state management and scoring
-    ├── ui-manager.js       # UI updates and display management
-    ├── scene-manager.js    # Three.js scene setup and rendering
-    ├── entity-manager.js   # Plants, animals, and power-ups
-    ├── websocket-manager.js # WebSocket connection and messages
-    └── game-loop.js        # Animation loop and timing
-```
+### Core Systems
 
-### Module Responsibilities
-
-#### `main.js`
-- Main application orchestrator
-- Initializes all game components
-- Coordinates module interactions
-- Handles game lifecycle (start, pause, game over)
-
-#### `config.js`
-- All game configuration in one place
-- Garden boundaries and limits
-- Stablecoin colors mapping
-- Power-up configurations
-
-#### `player.js`
-- `PlayerController` class manages player input
-- Keyboard and mouse event handling
-- Player movement physics
-- Camera following logic
-
-#### `game-state.js`
-- `GameState` class tracks game progress
-- Score and money collection
-- Lives system
-- Statistics tracking
-- High score persistence
-
-#### `ui-manager.js`
-- `UIManager` class handles all UI updates
-- Score and stats display
-- Screen management (start, pause, game over)
-- Power-up indicators
-
-#### `scene-manager.js`
-- `SceneManager` class handles Three.js setup
-- Scene, camera, and renderer initialization
-- Lighting configuration
-- Ground and border creation
-
-#### `entity-manager.js`
-- `EntityManager` class manages game entities
-- Plant creation and growth
-- Animal behavior and AI
-- Power-up fruit spawning
-- Collision detection
-
-#### `websocket-manager.js`
-- `WebSocketManager` handles server connection
-- Transaction data processing
-- Automatic reconnection logic
-- Connection status monitoring
-
-#### `game-loop.js`
-- `GameLoop` class manages animation
-- Frame timing and delta time
-- FPS monitoring
-- Pause/resume functionality
+- **Entity Management**: Maps transactions to game objects
+- **Spawn Queue**: Controls entity creation rate and distribution
+- **Collision System**: Size-based eating mechanics
+- **Alliance System**: AI cooperation when threatened
+- **Power-up System**: Temporary advantages (2x size, 2x speed, extra lives)
 
 ## Game Mechanics
 

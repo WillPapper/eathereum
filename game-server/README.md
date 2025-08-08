@@ -10,66 +10,14 @@ Rust WebSocket server that consumes Redis streams and broadcasts stablecoin tran
 - **WebSocket Server**: Maintains persistent connections with game clients
 - **Message Broadcaster**: Distributes transactions to all connected clients
 - **Health Server**: HTTP endpoint for monitoring
-### File Structure
-
-```
-game-server/
-├── src/
-│   ├── main.rs            # Application entry point and task coordination
-│   ├── config.rs          # Configuration management from environment
-│   ├── transaction.rs     # Transaction data model
-│   ├── redis_consumer.rs  # Redis stream consumer with acknowledgments
-│   ├── websocket.rs       # WebSocket server and client management
-│   └── health.rs          # Health check HTTP endpoint
-├── Cargo.toml             # Dependencies
-└── render.yaml            # Render.com deployment config
-```
-
-### Module Responsibilities
-
-#### `config.rs`
-- Loads and validates environment variables
-- Provides centralized configuration struct
-- Masks sensitive data in logs (Redis credentials)
-- Generates unique consumer names
-
-#### `transaction.rs`
-- Defines the `TransactionData` struct
-- Shared data model matching block-monitor output
-
-#### `redis_consumer.rs`
-- `RedisConsumer` manages Redis stream consumption
-- Implements consumer group pattern for scalability
-- Handles message acknowledgments
-- Parses stream data into transaction objects
-- Includes connection retry logic with backoff
-
-#### `websocket.rs`
-- `ClientManager` tracks connected WebSocket clients
-- `WebSocketServer` handles incoming connections
-- Broadcasts messages to all clients efficiently
-- Manages client lifecycle (connect/disconnect)
-- Thread-safe client registry using Arc<RwLock>
-
-#### `health.rs`
-- Provides HTTP health check endpoint
-- Simple async server on dedicated port
-- Returns OK status for monitoring tools
-
-#### `main.rs`
-- Initializes all components with dependency injection
-- Spawns concurrent tasks (Redis consumer, WebSocket, health)
-- Manages graceful shutdown
-- Coordinates component lifecycle
 
 ### Data Flow
 
-1. **Redis Consumption**: `RedisConsumer` reads from stream using consumer groups
-2. **Message Processing**: Parses Redis stream entries into `TransactionData`
-3. **Client Management**: `ClientManager` maintains registry of connected clients
-4. **Broadcasting**: Sends transaction JSON to all WebSocket clients
-5. **Acknowledgment**: Confirms message processing to Redis
-6. **Health Monitoring**: Separate HTTP endpoint for service health
+1. Connect to Redis stream as consumer
+2. Read transactions from consumer group (batch of 10)
+3. Acknowledge messages after processing
+4. Broadcast JSON to all WebSocket clients
+5. Handle client connections/disconnections gracefully
 
 ## Configuration
 
