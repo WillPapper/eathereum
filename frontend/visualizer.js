@@ -76,10 +76,13 @@ const SPEEDRUN_DOUBLE_EAT_WINDOW = 5000; // 5 seconds to double eat for 4x effec
 const SPEEDRUN_EFFECT_DURATION = 12000; // 12 seconds of speed effect
 
 // Difficulty scaling system
-let difficultyLevel = 'normal'; // 'normal' or 'survival'
+let difficultyLevel = 'normal'; // 'normal', 'survival', or 'alliance'
 let lastDifficultyCheck = 0;
 const DIFFICULTY_CHECK_INTERVAL = 5000; // Check every 5 seconds
 const EDIBLE_THRESHOLD = 0.5; // 50% of animals must be edible to trigger survival mode
+const ALLIANCE_THRESHOLD = 0.9; // 90% of animals must be smaller to trigger alliance mode
+let allianceActive = false; // Track if animals are actively teaming up
+let lastAllianceCheck = 0;
 
 // Configuration
 const MAX_PLANTS = 10000; // Maximum number of plants in the garden
@@ -539,11 +542,12 @@ class TransactionAnimal {
         this.lastPlayerSighting = null;
         
         // AI State properties for survival mode
-        this.aiState = 'roaming'; // 'roaming', 'hunting', 'eating', 'growing'
-        this.targetAnimal = null; // Target animal for hunting
+        this.aiState = 'roaming'; // 'roaming', 'hunting', 'eating', 'growing', 'merging'
+        this.targetAnimal = null; // Target animal for hunting or merging
         this.huntingCooldown = Date.now(); // Timestamp for hunting cooldown
         this.originalSize = this.size; // Store original size for growth tracking
         this.growthFromEating = 0; // How much size gained from eating other animals
+        this.mergePartner = null; // Partner for alliance merging
         
         // Get animal color based on stablecoin
         this.baseColor = STABLECOIN_COLORS[stablecoin] || 0xFFFFFF;
@@ -1059,6 +1063,51 @@ class TransactionAnimal {
             case 'growing':
                 // Brief pause state after eating, timeout handled by animalEatAnimal function
                 break;
+                
+            case 'merging':
+                // Alliance mode - seek merge partner
+                if (this.mergePartner && this.mergePartner.isAlive) {
+                    this.seekMergePartner();
+                } else {
+                    // Lost partner, return to roaming
+                    this.aiState = 'roaming';
+                    this.mergePartner = null;
+                }
+                break;
+        }
+    }
+    
+    // Seek merge partner during alliance mode
+    seekMergePartner() {
+        if (!this.mergePartner || !this.mergePartner.isAlive) {
+            this.aiState = 'roaming';
+            this.mergePartner = null;
+            return;
+        }
+        
+        const distance = this.mesh.position.distanceTo(this.mergePartner.mesh.position);
+        const mergeRange = this.size + this.mergePartner.size + 1;
+        
+        if (distance < mergeRange) {
+            // Close enough to merge!
+            mergeAnimals(this, this.mergePartner);
+        } else {
+            // Move toward merge partner
+            const moveDirection = new THREE.Vector3();
+            moveDirection.subVectors(this.mergePartner.mesh.position, this.mesh.position);
+            moveDirection.y = 0;
+            moveDirection.normalize();
+            
+            // Set direction toward partner
+            this.targetDirection = Math.atan2(moveDirection.x, moveDirection.z);
+            
+            // Move faster when merging
+            this.speed = this.baseSpeed * 2.0;
+            
+            // Visual indication of merging intent
+            if (Math.random() < 0.1) {
+                this.mesh.rotation.y += 0.2; // Wiggle effect
+            }
         }
     }
     
@@ -3224,6 +3273,7 @@ function checkDifficultyScaling() {
     // Calculate how many animals are edible vs threatening
     let edibleCount = 0;
     let threateningCount = 0;
+    let largestAnimalSize = 0;
     
     animals.forEach(animal => {
         if (animal.size < playerControls.size * 1.2) {
@@ -3231,12 +3281,31 @@ function checkDifficultyScaling() {
         } else {
             threateningCount++;
         }
+        largestAnimalSize = Math.max(largestAnimalSize, animal.size);
     });
     
     const edibleRatio = edibleCount / animals.length;
+    const smallerRatio = animals.filter(a => a.size < playerControls.size).length / animals.length;
     
-    // Switch to survival mode if >50% are edible
-    if (edibleRatio > EDIBLE_THRESHOLD && difficultyLevel === 'normal') {
+    // ALLIANCE MODE - Player is too dominant (90%+ animals are smaller)
+    if (smallerRatio >= ALLIANCE_THRESHOLD && largestAnimalSize < playerControls.size * 0.8) {
+        if (difficultyLevel !== 'alliance') {
+            difficultyLevel = 'alliance';
+            allianceActive = true;
+            console.log(`⚔️ ALLIANCE MODE ACTIVATED! You're too powerful (${(smallerRatio * 100).toFixed(1)}% smaller). Animals will team up against you!`);
+            
+            // Start the alliance behavior
+            initiateAnimalAlliance();
+        }
+    }
+    // Exit alliance mode if there are now competitive animals
+    else if (difficultyLevel === 'alliance' && (smallerRatio < ALLIANCE_THRESHOLD * 0.8 || largestAnimalSize > playerControls.size * 0.9)) {
+        difficultyLevel = 'survival';
+        allianceActive = false;
+        console.log(`⚔️ Alliance mode ended. Competitive balance restored.`);
+    }
+    // SURVIVAL MODE - Moderate dominance (50-90% edible)
+    else if (edibleRatio > EDIBLE_THRESHOLD && difficultyLevel === 'normal') {
         difficultyLevel = 'survival';
         console.log(`🔥 SURVIVAL MODE ACTIVATED! ${(edibleRatio * 100).toFixed(1)}% of animals are now edible. Animals will start eating each other to grow!`);
         
@@ -3251,7 +3320,7 @@ function checkDifficultyScaling() {
         });
         console.log(`👹 ${huntersCreated} animals became hunters!`);
     }
-    // Switch back to normal if threats return (though this is less likely)
+    // NORMAL MODE - Balanced gameplay
     else if (edibleRatio < EDIBLE_THRESHOLD * 0.7 && difficultyLevel === 'survival') {
         difficultyLevel = 'normal';
         console.log(`✅ Difficulty normalized. ${(edibleRatio * 100).toFixed(1)}% animals edible.`);
@@ -3303,6 +3372,185 @@ function animalEatAnimal(predator, prey) {
     }, 1000);
     
     console.log(`🍖 ${predator.animalType} ate ${prey.animalType}! Size: ${predator.originalSize.toFixed(1)} → ${predator.size.toFixed(1)} (+${growthFactor.toFixed(2)})`);
+}
+
+// Initiate animal alliance - animals team up against dominant player
+function initiateAnimalAlliance() {
+    if (animals.length < 2) return;
+    
+    // Sort animals by size
+    const sortedAnimals = [...animals].sort((a, b) => b.size - a.size);
+    
+    // Find pairs of animals to merge
+    const mergePairs = [];
+    const alreadyPaired = new Set();
+    
+    // Pair up the largest animals first for maximum impact
+    for (let i = 0; i < sortedAnimals.length - 1; i++) {
+        if (alreadyPaired.has(sortedAnimals[i])) continue;
+        
+        for (let j = i + 1; j < sortedAnimals.length; j++) {
+            if (alreadyPaired.has(sortedAnimals[j])) continue;
+            
+            const animal1 = sortedAnimals[i];
+            const animal2 = sortedAnimals[j];
+            
+            // Only merge if combined size would be competitive with player
+            const combinedSize = animal1.size + animal2.size * 0.7; // Not full addition to prevent instant giants
+            
+            if (combinedSize > playerControls.size * 0.7) {
+                mergePairs.push([animal1, animal2]);
+                alreadyPaired.add(animal1);
+                alreadyPaired.add(animal2);
+                
+                // Set their AI states to seek merging
+                animal1.aiState = 'merging';
+                animal1.mergePartner = animal2;
+                animal2.aiState = 'merging';
+                animal2.mergePartner = animal1;
+                
+                // Limit to 2-3 merge pairs initially
+                if (mergePairs.length >= 2) break;
+            }
+        }
+        
+        if (mergePairs.length >= 2) break;
+    }
+    
+    console.log(`🤝 ${mergePairs.length} animal pairs forming alliances to challenge you!`);
+}
+
+// Handle animal merging during alliance mode
+function mergeAnimals(animal1, animal2) {
+    if (!animal1.isAlive || !animal2.isAlive) return;
+    
+    // The larger animal absorbs the smaller one
+    const absorber = animal1.size >= animal2.size ? animal1 : animal2;
+    const absorbed = animal1.size < animal2.size ? animal1 : animal2;
+    
+    // Calculate new size (not full addition to prevent instant giants)
+    const sizeFactor = 0.7; // Absorbed animal contributes 70% of its size
+    const newSize = Math.min(absorber.size + absorbed.size * sizeFactor, playerControls.size * 1.5); // Cap at 1.5x player size
+    
+    // Update the absorber
+    absorber.size = newSize;
+    absorber.amount = absorber.amount + absorbed.amount * 0.5; // Combine values
+    absorber.mesh.scale.setScalar(newSize / absorber.originalSize);
+    
+    // Create merge visual effect
+    createMergeEffect(absorber.mesh.position, absorbed.mesh.position, absorber.baseColor, absorbed.baseColor);
+    
+    // Remove the absorbed animal
+    scene.remove(absorbed.mesh);
+    absorbed.dispose();
+    const index = animals.indexOf(absorbed);
+    if (index !== -1) {
+        animals.splice(index, 1);
+        stats.currentAnimals--;
+    }
+    
+    // Reset absorber's state
+    absorber.aiState = 'roaming';
+    absorber.mergePartner = null;
+    
+    console.log(`🔮 Alliance formed! ${absorber.animalType} absorbed ${absorbed.animalType}. New size: ${newSize.toFixed(1)} (vs player: ${playerControls.size.toFixed(1)})`);
+    
+    // Check if we need more merges
+    if (allianceActive) {
+        checkAllianceProgress();
+    }
+}
+
+// Check if alliance has created enough competitive animals
+function checkAllianceProgress() {
+    const competitiveAnimals = animals.filter(a => a.size > playerControls.size * 0.8).length;
+    
+    if (competitiveAnimals >= 2) {
+        allianceActive = false;
+        console.log(`⚔️ Alliance successful! ${competitiveAnimals} animals can now challenge you.`);
+    } else if (allianceActive && animals.length > 4) {
+        // Continue merging if needed
+        setTimeout(() => {
+            if (allianceActive) {
+                initiateAnimalAlliance();
+            }
+        }, 3000);
+    }
+}
+
+// Create visual effect for animal merging
+function createMergeEffect(position1, position2, color1, color2) {
+    // Create energy beam between the two animals
+    const midPoint = new THREE.Vector3().lerpVectors(position1, position2, 0.5);
+    
+    // Create expanding ring effect
+    const ringGeometry = new THREE.RingGeometry(0.5, 2, 8);
+    const ringMaterial = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(color1).lerp(new THREE.Color(color2), 0.5),
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide
+    });
+    const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+    ring.position.copy(midPoint);
+    ring.position.y = -28;
+    ring.rotation.x = -Math.PI / 2;
+    scene.add(ring);
+    
+    // Animate the ring
+    const animateRing = () => {
+        ring.scale.x += 0.3;
+        ring.scale.y += 0.3;
+        ringMaterial.opacity -= 0.02;
+        
+        if (ringMaterial.opacity > 0) {
+            requestAnimationFrame(animateRing);
+        } else {
+            scene.remove(ring);
+            ringGeometry.dispose();
+            ringMaterial.dispose();
+        }
+    };
+    animateRing();
+    
+    // Create particle burst
+    for (let i = 0; i < 20; i++) {
+        const particleGeometry = new THREE.SphereGeometry(0.2, 4, 4);
+        const particleMaterial = new THREE.MeshBasicMaterial({
+            color: Math.random() > 0.5 ? color1 : color2,
+            transparent: true,
+            opacity: 0.9
+        });
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+        
+        particle.position.copy(midPoint);
+        particle.position.x += (Math.random() - 0.5) * 2;
+        particle.position.z += (Math.random() - 0.5) * 2;
+        
+        const velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.5,
+            Math.random() * 0.5 + 0.2,
+            (Math.random() - 0.5) * 0.5
+        );
+        
+        scene.add(particle);
+        
+        // Animate particle
+        const animateParticle = () => {
+            particle.position.add(velocity);
+            velocity.y -= 0.02;
+            particleMaterial.opacity -= 0.015;
+            
+            if (particleMaterial.opacity > 0 && particle.position.y > -30) {
+                requestAnimationFrame(animateParticle);
+            } else {
+                scene.remove(particle);
+                particleGeometry.dispose();
+                particleMaterial.dispose();
+            }
+        };
+        animateParticle();
+    }
 }
 
 // Visual effect for animal eating animal
@@ -3859,7 +4107,12 @@ function updateStats() {
         }
         
         // Add difficulty indicator
-        if (difficultyLevel === 'survival') {
+        if (difficultyLevel === 'alliance') {
+            sizeText += ' ⚔️'; // Sword emoji for alliance mode
+            if (sizeColor === '#FFFFFF') {
+                sizeColor = '#FF00FF'; // Purple for alliance mode
+            }
+        } else if (difficultyLevel === 'survival') {
             sizeText += ' 🔥'; // Fire emoji for survival mode
             if (sizeColor === '#FFFFFF') {
                 sizeColor = '#FF6B6B'; // Red tint for survival mode
