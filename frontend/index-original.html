@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stablecoin Transaction Visualizer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="container">
+      <div id="canvas-container"></div>
+      <div id="info-panel">
+        <div class="trading-header">
+          <h1>LIVE STABLECOIN FEED</h1>
+          <div class="pulse-indicator"></div>
+        </div>
+
+        <!-- Player Stats Bar -->
+        <div id="player-stats">
+          <div
+            class="player-stat-item"
+            style="background: linear-gradient(135deg, #ffd700, #ffa500)"
+          >
+            <span class="stat-icon">💰</span>
+            <span id="money-collected" class="stat-value">$0.00</span>
+          </div>
+          <div
+            class="player-stat-item"
+            style="background: linear-gradient(135deg, #ff69b4, #ff1493)"
+          >
+            <span class="stat-icon">💖</span>
+            <span id="lives-count" class="stat-value">1/5</span>
+          </div>
+          <div
+            class="player-stat-item"
+            style="background: linear-gradient(135deg, #9b59b6, #8e44ad)"
+          >
+            <span class="stat-icon">📏</span>
+            <span id="player-size" class="stat-value">1.0</span>
+          </div>
+        </div>
+
+        <!-- Market Overview -->
+        <div id="market-overview">
+          <div class="market-header">STABLECOIN VOLUME</div>
+          <div class="market-stats">
+            <div class="market-coin" data-coin="usdc">
+              <div class="coin-name">USDC</div>
+              <div class="coin-count" id="usdc-count">0</div>
+              <div class="coin-volume" id="usdc-volume">$0</div>
+            </div>
+            <div class="market-coin" data-coin="usdt">
+              <div class="coin-name">USDT</div>
+              <div class="coin-count" id="usdt-count">0</div>
+              <div class="coin-volume" id="usdt-volume">$0</div>
+            </div>
+            <div class="market-coin" data-coin="dai">
+              <div class="coin-name">DAI</div>
+              <div class="coin-count" id="dai-count">0</div>
+              <div class="coin-volume" id="dai-volume">$0</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Transaction Feed -->
+        <div id="transaction-feed">
+          <div class="feed-header">
+            <span>INCOMING TRANSACTIONS</span>
+            <span class="queue-count" id="queue-count">0</span>
+          </div>
+          <div id="transaction-list"></div>
+        </div>
+
+        <!-- Active Animals on Field -->
+        <div id="field-status">
+          <div class="field-header">
+            <span>ON FIELD</span>
+            <span class="field-count" id="field-count">0</span>
+          </div>
+          <div id="field-animals"></div>
+        </div>
+
+        <!-- Garden Stats -->
+        <div id="garden-stats">
+          <div class="garden-label">🌳 Garden</div>
+          <div id="plant-count" class="garden-value">0 trees / 0 animals</div>
+        </div>
+        <div id="connection-status">
+          <span class="status-label">Network:</span>
+          <span id="status" class="disconnected">Disconnected</span>
+          <span class="latency" id="latency">--ms</span>
+        </div>
+        <div id="controls">
+          <button id="play-btn" class="primary-btn">🎮 Play</button>
+          <button id="pause-btn">Pause</button>
+          <button id="clear-btn">Clear</button>
+        </div>
+        <div id="game-status" style="display: none">
+          <span style="color: #ffd700"
+            >🎮 Playing - WASD to move, QE to rotate, Mouse to look</span
+          >
+          <br /><span style="color: #00ff00">🟢+ = Edible</span> |
+          <span style="color: #ff0000">🔴✖ = Dangerous</span> <br /><span
+            style="color: #ff69b4"
+            >💖 Pink = Life Fruit</span
+          >
+          |
+          <span style="color: #ffd700"
+            >⚡ Gold = Leverage Fruit (2x size!)</span
+          >
+          <br /><span style="color: #00ffff"
+            >💨 Cyan = Speedrun Fruit (2x speed!)</span
+          >
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bowser@2.11.0/es5.min.js"></script>
+    <script src="websocket.js"></script>
+    <script src="visualizer.js"></script>
+  </body>
+</html>

@@ -1,4 +1,5 @@
-import * as THREE from 'three';
+// Use global THREE from CDN
+const THREE = window.THREE;
 import Config from '../core/Config.js';
 
 class AssetFactoryClass {

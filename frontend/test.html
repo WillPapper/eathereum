@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test - Stablecoin Visualizer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: monospace;
+        }
+        #test-container {
+            width: 100vw;
+            height: 100vh;
+            background: #87CEEB;
+        }
+        #status {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        .error {
+            color: #ff0000;
+        }
+        .success {
+            color: #00ff00;
+        }
+    </style>
+</head>
+<body>
+    <div id="test-container"></div>
+    <div id="status">Loading...</div>
+    
+    <!-- Load Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <script type="module">
+        const statusEl = document.getElementById('status');
+        
+        try {
+            // Test if THREE is available globally
+            if (!window.THREE) {
+                throw new Error('THREE.js not loaded');
+            }
+            statusEl.innerHTML = '<span class="success">✓ THREE.js loaded</span><br>';
+            
+            // Test creating a basic scene
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('test-container').appendChild(renderer.domElement);
+            
+            statusEl.innerHTML += '<span class="success">✓ Renderer created</span><br>';
+            
+            // Create ground plane
+            const planeGeometry = new THREE.PlaneGeometry(200, 200);
+            const planeMaterial = new THREE.MeshBasicMaterial({ color: 0x3a5f3a, side: THREE.DoubleSide });
+            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            plane.rotation.x = -Math.PI / 2;
+            scene.add(plane);
+            
+            statusEl.innerHTML += '<span class="success">✓ Plane created</span><br>';
+            
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 10, 5);
+            scene.add(directionalLight);
+            
+            statusEl.innerHTML += '<span class="success">✓ Lighting added</span><br>';
+            
+            // Position camera
+            camera.position.set(0, 30, 50);
+            camera.lookAt(0, 0, 0);
+            
+            // Render loop
+            function animate() {
+                requestAnimationFrame(animate);
+                plane.rotation.z += 0.001;
+                renderer.render(scene, camera);
+            }
+            animate();
+            
+            statusEl.innerHTML += '<span class="success">✓ Animation started</span><br>';
+            statusEl.innerHTML += '<br><strong class="success">All tests passed! Plane should be visible and rotating.</strong>';
+            
+        } catch (error) {
+            statusEl.innerHTML = '<span class="error">✗ Error: ' + error.message + '</span>';
+            console.error(error);
+        }
+    </script>
+</body>
+</html>

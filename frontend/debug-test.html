@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #0f0;
+        }
+        .error { color: #f00; }
+        .success { color: #0f0; }
+        .warning { color: #ff0; }
+    </style>
+</head>
+<body>
+    <h1>Stablecoin Visualizer Debug Test</h1>
+    <div id="results"></div>
+    
+    <!-- Load Three.js first -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <script type="module">
+        const results = document.getElementById('results');
+        let testsPassed = 0;
+        let testsFailed = 0;
+        
+        function log(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = type;
+            div.textContent = message;
+            results.appendChild(div);
+        }
+        
+        // Test 1: THREE.js loaded
+        if (window.THREE) {
+            log('✓ THREE.js loaded successfully', 'success');
+            testsPassed++;
+        } else {
+            log('✗ THREE.js not loaded', 'error');
+            testsFailed++;
+        }
+        
+        // Test 2: Create basic scene
+        try {
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer();
+            log('✓ Basic Three.js objects created', 'success');
+            testsPassed++;
+            renderer.dispose();
+        } catch (e) {
+            log('✗ Failed to create Three.js objects: ' + e.message, 'error');
+            testsFailed++;
+        }
+        
+        // Test 3: Create plane geometry
+        try {
+            const planeGeometry = new THREE.PlaneGeometry(200, 200);
+            const planeMaterial = new THREE.MeshBasicMaterial({ color: 0x3a5f3a });
+            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            log('✓ Plane geometry created successfully', 'success');
+            testsPassed++;
+            planeGeometry.dispose();
+            planeMaterial.dispose();
+        } catch (e) {
+            log('✗ Failed to create plane: ' + e.message, 'error');
+            testsFailed++;
+        }
+        
+        // Test 4: Load modules
+        try {
+            // Set up mock environment
+            window.process = { env: { NODE_ENV: 'development' } };
+            
+            // Import the modules
+            const modules = [
+                './src/core/Config.js',
+                './src/core/EventBus.js',
+                './src/core/GameState.js',
+                './src/core/GameEngine.js',
+                './src/rendering/SceneManager.js',
+                './src/rendering/AssetFactory.js',
+                './src/entities/Player.js'
+            ];
+            
+            log('Testing module imports...', 'warning');
+            
+            for (const module of modules) {
+                try {
+                    await import(module);
+                    log(`✓ ${module} loaded`, 'success');
+                    testsPassed++;
+                } catch (e) {
+                    log(`✗ Failed to load ${module}: ${e.message}`, 'error');
+                    testsFailed++;
+                }
+            }
+            
+        } catch (e) {
+            log('✗ Module loading error: ' + e.message, 'error');
+            testsFailed++;
+        }
+        
+        // Summary
+        setTimeout(() => {
+            log('─'.repeat(50), 'info');
+            if (testsFailed === 0) {
+                log(`ALL TESTS PASSED (${testsPassed}/${testsPassed})`, 'success');
+                log('The visualizer should work correctly!', 'success');
+            } else {
+                log(`TESTS FAILED: ${testsFailed} failed, ${testsPassed} passed`, 'error');
+                log('Please fix the errors above before running the visualizer.', 'warning');
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

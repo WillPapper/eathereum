@@ -1,4 +1,5 @@
-import * as THREE from 'three';
+// Use global THREE from CDN
+const THREE = window.THREE;
 import { EventBus, GameEvents } from '../core/EventBus.js';
 import Config from '../core/Config.js';
 import GameState from '../core/GameState.js';

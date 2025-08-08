@@ -1,123 +1,290 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Stablecoin Transaction Visualizer</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <div id="container">
-      <div id="canvas-container"></div>
-      <div id="info-panel">
-        <div class="trading-header">
-          <h1>LIVE STABLECOIN FEED</h1>
-          <div class="pulse-indicator"></div>
-        </div>
-
-        <!-- Player Stats Bar -->
-        <div id="player-stats">
-          <div
-            class="player-stat-item"
-            style="background: linear-gradient(135deg, #ffd700, #ffa500)"
-          >
-            <span class="stat-icon">💰</span>
-            <span id="money-collected" class="stat-value">$0.00</span>
-          </div>
-          <div
-            class="player-stat-item"
-            style="background: linear-gradient(135deg, #ff69b4, #ff1493)"
-          >
-            <span class="stat-icon">💖</span>
-            <span id="lives-count" class="stat-value">1/5</span>
-          </div>
-          <div
-            class="player-stat-item"
-            style="background: linear-gradient(135deg, #9b59b6, #8e44ad)"
-          >
-            <span class="stat-icon">📏</span>
-            <span id="player-size" class="stat-value">1.0</span>
-          </div>
-        </div>
-
-        <!-- Market Overview -->
-        <div id="market-overview">
-          <div class="market-header">STABLECOIN VOLUME</div>
-          <div class="market-stats">
-            <div class="market-coin" data-coin="usdc">
-              <div class="coin-name">USDC</div>
-              <div class="coin-count" id="usdc-count">0</div>
-              <div class="coin-volume" id="usdc-volume">$0</div>
-            </div>
-            <div class="market-coin" data-coin="usdt">
-              <div class="coin-name">USDT</div>
-              <div class="coin-count" id="usdt-count">0</div>
-              <div class="coin-volume" id="usdt-volume">$0</div>
-            </div>
-            <div class="market-coin" data-coin="dai">
-              <div class="coin-name">DAI</div>
-              <div class="coin-count" id="dai-count">0</div>
-              <div class="coin-volume" id="dai-volume">$0</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Live Transaction Feed -->
-        <div id="transaction-feed">
-          <div class="feed-header">
-            <span>INCOMING TRANSACTIONS</span>
-            <span class="queue-count" id="queue-count">0</span>
-          </div>
-          <div id="transaction-list"></div>
-        </div>
-
-        <!-- Active Animals on Field -->
-        <div id="field-status">
-          <div class="field-header">
-            <span>ON FIELD</span>
-            <span class="field-count" id="field-count">0</span>
-          </div>
-          <div id="field-animals"></div>
-        </div>
-
-        <!-- Garden Stats -->
-        <div id="garden-stats">
-          <div class="garden-label">🌳 Garden</div>
-          <div id="plant-count" class="garden-value">0 trees / 0 animals</div>
-        </div>
-        <div id="connection-status">
-          <span class="status-label">Network:</span>
-          <span id="status" class="disconnected">Disconnected</span>
-          <span class="latency" id="latency">--ms</span>
-        </div>
-        <div id="controls">
-          <button id="play-btn" class="primary-btn">🎮 Play</button>
-          <button id="pause-btn">Pause</button>
-          <button id="clear-btn">Clear</button>
-        </div>
-        <div id="game-status" style="display: none">
-          <span style="color: #ffd700"
-            >🎮 Playing - WASD to move, QE to rotate, Mouse to look</span
-          >
-          <br /><span style="color: #00ff00">🟢+ = Edible</span> |
-          <span style="color: #ff0000">🔴✖ = Dangerous</span> <br /><span
-            style="color: #ff69b4"
-            >💖 Pink = Life Fruit</span
-          >
-          |
-          <span style="color: #ffd700"
-            >⚡ Gold = Leverage Fruit (2x size!)</span
-          >
-          <br /><span style="color: #00ffff"
-            >💨 Cyan = Speedrun Fruit (2x speed!)</span
-          >
-        </div>
-      </div>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stablecoin Transaction Visualizer - Refactored</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Additional styles for new UI elements */
+        .start-screen,
+        .game-over-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            color: white;
+            font-family: monospace;
+        }
+        
+        .game-over-screen {
+            display: none;
+        }
+        
+        .game-title {
+            font-size: 3em;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #4A90E2, #50C878, #FFD700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .game-subtitle {
+            font-size: 1.2em;
+            margin-bottom: 40px;
+            color: #87CEEB;
+        }
+        
+        .start-button,
+        .restart-button {
+            padding: 15px 40px;
+            font-size: 1.2em;
+            background: linear-gradient(135deg, #9B59B6, #8E44AD);
+            border: none;
+            color: white;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: transform 0.2s;
+        }
+        
+        .start-button:hover,
+        .restart-button:hover {
+            transform: scale(1.1);
+        }
+        
+        .final-score {
+            font-size: 2em;
+            margin: 20px 0;
+            color: #FFD700;
+        }
+        
+        .high-score {
+            font-size: 1.5em;
+            margin-bottom: 30px;
+            color: #50C878;
+        }
+        
+        .combo-popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2em;
+            font-weight: bold;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            pointer-events: none;
+            z-index: 999;
+            animation: combo-bounce 0.5s ease-out;
+        }
+        
+        @keyframes combo-bounce {
+            0% {
+                transform: translate(-50%, -50%) scale(0.5);
+                opacity: 0;
+            }
+            50% {
+                transform: translate(-50%, -50%) scale(1.2);
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+        }
+        
+        .combo-popup.fade-out {
+            animation: combo-fade 0.5s ease-out forwards;
+        }
+        
+        @keyframes combo-fade {
+            to {
+                opacity: 0;
+                transform: translate(-50%, -100%) scale(0.8);
+            }
+        }
+        
+        .difficulty-normal {
+            color: #87CEEB;
+        }
+        
+        .difficulty-survival {
+            color: #FF6B35;
+        }
+        
+        .difficulty-alliance {
+            color: #9B59B6;
+        }
+        
+        #fps {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: #00FF00;
+            font-family: monospace;
+            font-size: 14px;
+            z-index: 100;
+        }
+        
+        #difficulty {
+            position: fixed;
+            top: 30px;
+            left: 10px;
+            font-family: monospace;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <!-- Game Container -->
+    <div id="game-container"></div>
+    
+    <!-- Start Screen -->
+    <div id="startScreen" class="start-screen">
+        <h1 class="game-title">Stablecoin Ecosystem</h1>
+        <p class="game-subtitle">Eat, Grow, Survive in the Blockchain Garden</p>
+        <button id="startButton" class="start-button">Start Game</button>
     </div>
-
+    
+    <!-- Game Over Screen -->
+    <div id="gameOverScreen" class="game-over-screen">
+        <h1 class="game-title">Game Over</h1>
+        <div id="finalScore" class="final-score">Final Score: $0.00</div>
+        <div id="highScore" class="high-score">High Score: $0.00</div>
+        <button id="restartButton" class="restart-button">Play Again</button>
+    </div>
+    
+    <!-- Main UI Container -->
+    <div id="container">
+        <div id="canvas-container"></div>
+        <div id="info-panel">
+            <div class="trading-header">
+                <h1>LIVE STABLECOIN FEED</h1>
+                <div class="pulse-indicator"></div>
+            </div>
+            
+            <!-- Player Stats Bar -->
+            <div id="player-stats">
+                <div class="player-stat-item" style="background: linear-gradient(135deg, #ffd700, #ffa500)">
+                    <span class="stat-icon">💰</span>
+                    <span id="score" class="stat-value">$0.00</span>
+                </div>
+                <div class="player-stat-item" style="background: linear-gradient(135deg, #ff69b4, #ff1493)">
+                    <span class="stat-icon">💖</span>
+                    <span id="lives" class="stat-value">1/5</span>
+                </div>
+                <div class="player-stat-item" style="background: linear-gradient(135deg, #9b59b6, #8e44ad)">
+                    <span class="stat-icon">📏</span>
+                    <span id="player-size" class="stat-value">1.0</span>
+                </div>
+            </div>
+            
+            <!-- Market Overview -->
+            <div id="market-overview">
+                <div class="market-header">STABLECOIN VOLUME</div>
+                <div class="market-stats">
+                    <div class="market-coin" data-coin="usdc">
+                        <div class="coin-name">USDC</div>
+                        <div class="coin-count" id="usdc-count">0</div>
+                        <div class="coin-volume" id="usdc-volume">$0</div>
+                    </div>
+                    <div class="market-coin" data-coin="usdt">
+                        <div class="coin-name">USDT</div>
+                        <div class="coin-count" id="usdt-count">0</div>
+                        <div class="coin-volume" id="usdt-volume">$0</div>
+                    </div>
+                    <div class="market-coin" data-coin="dai">
+                        <div class="coin-name">DAI</div>
+                        <div class="coin-count" id="dai-count">0</div>
+                        <div class="coin-volume" id="dai-volume">$0</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Live Transaction Feed -->
+            <div id="transaction-feed">
+                <div class="feed-header">
+                    <span>INCOMING TRANSACTIONS</span>
+                    <span class="queue-count" id="queue-count">0</span>
+                </div>
+                <div id="transaction-list"></div>
+            </div>
+            
+            <!-- Active Animals on Field -->
+            <div id="field-status">
+                <div class="field-header">
+                    <span>ON FIELD</span>
+                    <span class="field-count" id="field-count">0</span>
+                </div>
+                <div id="field-animals"></div>
+            </div>
+            
+            <!-- Garden Stats -->
+            <div id="garden-stats">
+                <div class="garden-label">🌳 Garden</div>
+                <div id="plant-count" class="garden-value">0 trees / 0 animals</div>
+            </div>
+            
+            <div id="connection-status">
+                <span class="status-label">Network:</span>
+                <span id="status" class="disconnected">Disconnected</span>
+                <span class="latency" id="latency">--ms</span>
+            </div>
+            
+            <div id="controls">
+                <button id="fullscreenButton" class="primary-btn">🖥️ Fullscreen</button>
+                <button id="pause-btn">Pause</button>
+                <button id="clear-btn">Clear</button>
+            </div>
+            
+            <div id="game-status" style="display: none">
+                <span style="color: #ffd700">🎮 Playing - WASD to move, QE to rotate, Mouse to look</span>
+                <br><span style="color: #00ff00">🟢+ = Edible</span> |
+                <span style="color: #ff0000">🔴✖ = Dangerous</span>
+                <br><span style="color: #ff69b4">💖 Pink = Life Fruit</span> |
+                <span style="color: #ffd700">⚡ Gold = Leverage Fruit (2x size!)</span>
+                <br><span style="color: #00ffff">💨 Cyan = Speedrun Fruit (2x speed!)</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Performance Display -->
+    <div id="fps">FPS: 60</div>
+    <div id="difficulty">Mode: normal</div>
+    
+    <!-- Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bowser@2.11.0/es5.min.js"></script>
+    
+    <!-- Import map for ES6 modules -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.min.js"
+        }
+    }
+    </script>
+    
+    <!-- WebSocket (existing) -->
+    <script>
+        // Make TransactionWebSocket available globally for compatibility
+        window.TransactionWebSocket = window.TransactionWebSocket || null;
+    </script>
     <script src="websocket.js"></script>
-    <script src="visualizer.js"></script>
-  </body>
+    
+    <!-- Main Game Module -->
+    <script type="module">
+        // Set environment for debugging
+        window.process = { env: { NODE_ENV: 'development' } };
+    </script>
+    <script type="module" src="src/main.js"></script>
+</body>
 </html>
