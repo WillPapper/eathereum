@@ -23,5 +23,21 @@ target
 # Cargo
 exex/target/
 
+
 # Test images folder
 visualizer/testimages/
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+.env.test
+*.env
+!.env.example
+
+# Log files
+output*.log
+*.log
+
+.DS_Store

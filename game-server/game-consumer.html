@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stablecoin Ecosystem Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+            background: #1a1a2e;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #gameCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* HUD Overlay */
+        .hud {
+            position: absolute;
+            color: white;
+            pointer-events: none;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .hud-top-left {
+            top: 20px;
+            left: 20px;
+        }
+
+        .hud-top-right {
+            top: 20px;
+            right: 20px;
+            text-align: right;
+        }
+
+        .hud-bottom-left {
+            bottom: 20px;
+            left: 20px;
+        }
+
+        .hud-bottom-right {
+            bottom: 20px;
+            right: 20px;
+            text-align: right;
+        }
+
+        .connection-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .connected .status-indicator {
+            background: #4caf50;
+        }
+
+        .connecting .status-indicator {
+            background: #ff9800;
+        }
+
+        .disconnected .status-indicator {
+            background: #f44336;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+        }
+
+        .game-stats {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            padding: 15px;
+            border-radius: 10px;
+            min-width: 200px;
+        }
+
+        .stat-item {
+            margin: 8px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #aaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .player-stats {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .health-bar {
+            width: 200px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .health-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4caf50, #8bc34a);
+            transition: width 0.3s ease;
+        }
+
+        .score {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .controls-help {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .control-key {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin: 0 2px;
+        }
+
+        .transaction-feed {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            padding: 15px;
+            border-radius: 10px;
+            max-width: 300px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .transaction-item {
+            font-size: 11px;
+            margin: 4px 0;
+            padding: 4px 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            border-left: 3px solid;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .transaction-item.usdc {
+            border-left-color: #2775ca;
+        }
+
+        .transaction-item.usdt {
+            border-left-color: #50af95;
+        }
+
+        .transaction-item.dai {
+            border-left-color: #f5ac37;
+        }
+
+        .game-over-screen {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(20px);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            color: white;
+            pointer-events: auto;
+        }
+
+        .game-over-screen.active {
+            display: block;
+        }
+
+        .game-over-title {
+            font-size: 48px;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .final-stats {
+            margin: 20px 0;
+            font-size: 18px;
+        }
+
+        .restart-button {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .restart-button:hover {
+            transform: scale(1.05);
+        }
+
+        /* Loading Screen */
+        .loading-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 1000;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 3px solid rgba(255, 255, 255, 0.2);
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        .loading-status {
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        /* Token legend */
+        .token-legend {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .legend-color.usdc {
+            background: #4A90E2;
+        }
+
+        .legend-color.usdt {
+            background: #50C878;
+        }
+
+        .legend-color.dai {
+            background: #FFD700;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <!-- Loading Screen -->
+        <div class="loading-screen" id="loadingScreen">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Loading Stablecoin Ecosystem...</div>
+            <div class="loading-status" id="loadingStatus">Initializing game engine...</div>
+        </div>
+
+        <!-- Game Canvas -->
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- HUD Overlays -->
+        <div class="hud hud-top-left">
+            <div class="connection-status disconnected" id="connectionStatus">
+                <span class="status-indicator"></span>
+                <span id="statusText">Disconnected</span>
+            </div>
+            <div class="player-stats">
+                <div class="score">Score: <span id="score">0</span></div>
+                <div class="stat-item">
+                    <span class="stat-label">Size</span>
+                    <span class="stat-value" id="playerSize">1.0x</span>
+                </div>
+                <div class="health-bar">
+                    <div class="health-fill" id="healthBar" style="width: 100%"></div>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Money Collected</span>
+                    <span class="stat-value">$<span id="moneyCollected">0</span></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="hud hud-top-right">
+            <div class="game-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Total Txns</span>
+                    <span class="stat-value" id="totalTransactions">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Active Animals</span>
+                    <span class="stat-value" id="activeAnimals">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">USDC</span>
+                    <span class="stat-value" id="usdcCount">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">USDT</span>
+                    <span class="stat-value" id="usdtCount">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">DAI</span>
+                    <span class="stat-value" id="daiCount">0</span>
+                </div>
+            </div>
+            <div class="token-legend">
+                <div class="legend-item">
+                    <div class="legend-color usdc"></div>
+                    <span>USDC - Sky Blue</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color usdt"></div>
+                    <span>USDT - Emerald</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color dai"></div>
+                    <span>DAI - Golden</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="hud hud-bottom-left">
+            <div class="controls-help">
+                <div><span class="control-key">↑</span> <span class="control-key">↓</span> <span class="control-key">←</span> <span class="control-key">→</span> Move</div>
+                <div><span class="control-key">Shift</span> Sprint</div>
+                <div><span class="control-key">Space</span> Jump</div>
+                <div><span class="control-key">P</span> Pause</div>
+                <div><span class="control-key">R</span> Restart</div>
+            </div>
+        </div>
+
+        <div class="hud hud-bottom-right">
+            <div class="transaction-feed" id="transactionFeed">
+                <!-- Recent transactions will appear here -->
+            </div>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div class="game-over-screen" id="gameOverScreen">
+            <h1 class="game-over-title">Game Over!</h1>
+            <div class="final-stats">
+                <p>Final Score: <span id="finalScore">0</span></p>
+                <p>Money Collected: $<span id="finalMoney">0</span></p>
+                <p>Animals Eaten: <span id="animalsEaten">0</span></p>
+                <p>Survival Time: <span id="survivalTime">0</span>s</p>
+            </div>
+            <button class="restart-button" onclick="restartGame()">Play Again</button>
+        </div>
+    </div>
+
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- Game Script -->
+    <script>
+        // Game Configuration
+        const CONFIG = {
+            WS_URL: 'ws://localhost:8080/ws',
+            MAX_ANIMALS: 50,
+            SPAWN_RADIUS: 50,
+            SAFE_SPAWN_RADIUS: 25,
+            PLAYER_START_SIZE: 1.0,
+            ANIMAL_SPEED_MULTIPLIER: 0.1, // Reduce speed for gameplay
+            CAMERA_DISTANCE: 30,
+            GROUND_SIZE: 200
+        };
+
+        // Game State
+        let scene, camera, renderer;
+        let player, ground, animals = [];
+        let ws = null;
+        let gameRunning = false;
+        let gameStartTime = Date.now();
+        let isPaused = false;
+
+        // Statistics
+        const stats = {
+            totalTransactions: 0,
+            activeAnimals: 0,
+            usdc: 0,
+            usdt: 0,
+            dai: 0,
+            score: 0,
+            moneyCollected: 0,
+            animalsEaten: 0
+        };
+
+        // Player State
+        const playerState = {
+            position: new THREE.Vector3(0, 1, 0),
+            velocity: new THREE.Vector3(0, 0, 0),
+            size: CONFIG.PLAYER_START_SIZE,
+            health: 100,
+            speed: 10,
+            jumpVelocity: 0,
+            isJumping: false
+        };
+
+        // Input State
+        const keys = {
+            forward: false,
+            backward: false,
+            left: false,
+            right: false,
+            shift: false,
+            space: false
+        };
+
+        // Initialize Three.js Scene
+        function initScene() {
+            // Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x87CEEB, 50, 200);
+            
+            // Camera
+            camera = new THREE.PerspectiveCamera(
+                75,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                1000
+            );
+            camera.position.set(0, 15, 30);
+            camera.lookAt(0, 0, 0);
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({
+                canvas: document.getElementById('gameCanvas'),
+                antialias: true
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(50, 100, 50);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.camera.left = -100;
+            directionalLight.shadow.camera.right = 100;
+            directionalLight.shadow.camera.top = 100;
+            directionalLight.shadow.camera.bottom = -100;
+            scene.add(directionalLight);
+            
+            // Ground
+            const groundGeometry = new THREE.PlaneGeometry(CONFIG.GROUND_SIZE, CONFIG.GROUND_SIZE);
+            const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x7CFC00 });
+            ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+            
+            // Grid Helper
+            const gridHelper = new THREE.GridHelper(CONFIG.GROUND_SIZE, 50, 0x444444, 0x444444);
+            scene.add(gridHelper);
+            
+            // Create Player
+            createPlayer();
+            
+            // Update loading status
+            updateLoadingStatus('Scene initialized');
+        }
+
+        // Create Player Model
+        function createPlayer() {
+            const geometry = new THREE.SphereGeometry(playerState.size, 32, 16);
+            const material = new THREE.MeshPhongMaterial({ 
+                color: 0xFF6B6B,
+                emissive: 0xFF6B6B,
+                emissiveIntensity: 0.2
+            });
+            player = new THREE.Mesh(geometry, material);
+            player.position.copy(playerState.position);
+            player.castShadow = true;
+            scene.add(player);
+        }
+
+        // Create Animal from Transaction
+        function createAnimalFromTransaction(data) {
+            // Skip if we have too many animals
+            if (animals.length >= CONFIG.MAX_ANIMALS) {
+                // Remove oldest animal
+                const oldAnimal = animals.shift();
+                scene.remove(oldAnimal.mesh);
+            }
+            
+            // Determine size based on amount
+            const amount = parseFloat(data.amount);
+            const size = Math.min(Math.max(Math.log10(amount + 1) * 0.5 + 0.5, 0.3), 5);
+            
+            // Get color based on stablecoin
+            const colors = {
+                USDC: 0x4A90E2,
+                USDT: 0x50C878,
+                DAI: 0xFFD700
+            };
+            const color = colors[data.stablecoin] || 0xFFFFFF;
+            
+            // Create animal mesh
+            const geometry = new THREE.SphereGeometry(size, 16, 8);
+            const material = new THREE.MeshPhongMaterial({
+                color: color,
+                emissive: color,
+                emissiveIntensity: 0.3
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            
+            // Random spawn position (safe distance from player)
+            let angle = Math.random() * Math.PI * 2;
+            let distance = CONFIG.SAFE_SPAWN_RADIUS + Math.random() * (CONFIG.SPAWN_RADIUS - CONFIG.SAFE_SPAWN_RADIUS);
+            mesh.position.set(
+                Math.cos(angle) * distance,
+                size,
+                Math.sin(angle) * distance
+            );
+            
+            mesh.castShadow = true;
+            scene.add(mesh);
+            
+            // Create animal object
+            const animal = {
+                mesh: mesh,
+                size: size,
+                speed: (0.5 + Math.random() * 1.5) * CONFIG.ANIMAL_SPEED_MULTIPLIER,
+                direction: new THREE.Vector3(
+                    Math.random() - 0.5,
+                    0,
+                    Math.random() - 0.5
+                ).normalize(),
+                stablecoin: data.stablecoin,
+                amount: amount,
+                txHash: data.tx_hash
+            };
+            
+            animals.push(animal);
+            stats.activeAnimals = animals.length;
+            updateHUD();
+            
+            // Add to transaction feed
+            addToTransactionFeed(data);
+        }
+
+        // Add Transaction to Feed
+        function addToTransactionFeed(data) {
+            const feed = document.getElementById('transactionFeed');
+            const item = document.createElement('div');
+            item.className = `transaction-item ${data.stablecoin.toLowerCase()}`;
+            item.innerHTML = `<strong>${data.stablecoin}</strong> $${parseFloat(data.amount).toFixed(2)}`;
+            
+            feed.insertBefore(item, feed.firstChild);
+            
+            // Keep only last 10 transactions
+            while (feed.children.length > 10) {
+                feed.removeChild(feed.lastChild);
+            }
+        }
+
+        // Update Animals
+        function updateAnimals(deltaTime) {
+            animals.forEach((animal, index) => {
+                // Move animal
+                animal.mesh.position.add(
+                    animal.direction.clone().multiplyScalar(animal.speed)
+                );
+                
+                // Bounce off boundaries
+                const boundary = CONFIG.GROUND_SIZE / 2 - animal.size;
+                if (Math.abs(animal.mesh.position.x) > boundary) {
+                    animal.direction.x *= -1;
+                    animal.mesh.position.x = Math.sign(animal.mesh.position.x) * boundary;
+                }
+                if (Math.abs(animal.mesh.position.z) > boundary) {
+                    animal.direction.z *= -1;
+                    animal.mesh.position.z = Math.sign(animal.mesh.position.z) * boundary;
+                }
+                
+                // Random direction change
+                if (Math.random() < 0.01) {
+                    animal.direction.applyAxisAngle(new THREE.Vector3(0, 1, 0), (Math.random() - 0.5) * Math.PI / 2);
+                }
+                
+                // Check collision with player
+                const distance = animal.mesh.position.distanceTo(player.position);
+                const minDistance = animal.size + playerState.size;
+                
+                if (distance < minDistance) {
+                    if (playerState.size > animal.size * 1.2) {
+                        // Player eats animal
+                        scene.remove(animal.mesh);
+                        animals.splice(index, 1);
+                        
+                        // Update player stats
+                        playerState.size += animal.size * 0.1;
+                        stats.score += Math.floor(animal.amount);
+                        stats.moneyCollected += animal.amount;
+                        stats.animalsEaten++;
+                        
+                        // Update player mesh
+                        player.geometry.dispose();
+                        player.geometry = new THREE.SphereGeometry(playerState.size, 32, 16);
+                        
+                        updateHUD();
+                    } else if (animal.size > playerState.size * 1.2) {
+                        // Animal eats player - game over
+                        gameOver();
+                    }
+                }
+            });
+            
+            stats.activeAnimals = animals.length;
+        }
+
+        // Update Player
+        function updatePlayer(deltaTime) {
+            // Apply input
+            const speed = keys.shift ? playerState.speed * 2 : playerState.speed;
+            
+            if (keys.forward) playerState.velocity.z = -speed;
+            else if (keys.backward) playerState.velocity.z = speed;
+            else playerState.velocity.z *= 0.9;
+            
+            if (keys.left) playerState.velocity.x = -speed;
+            else if (keys.right) playerState.velocity.x = speed;
+            else playerState.velocity.x *= 0.9;
+            
+            // Jump
+            if (keys.space && !playerState.isJumping) {
+                playerState.jumpVelocity = 10;
+                playerState.isJumping = true;
+            }
+            
+            // Apply gravity
+            if (playerState.isJumping) {
+                playerState.jumpVelocity -= 30 * deltaTime;
+                playerState.position.y += playerState.jumpVelocity * deltaTime;
+                
+                if (playerState.position.y <= playerState.size) {
+                    playerState.position.y = playerState.size;
+                    playerState.isJumping = false;
+                    playerState.jumpVelocity = 0;
+                }
+            }
+            
+            // Move player
+            playerState.position.x += playerState.velocity.x * deltaTime;
+            playerState.position.z += playerState.velocity.z * deltaTime;
+            
+            // Boundary check
+            const boundary = CONFIG.GROUND_SIZE / 2 - playerState.size;
+            playerState.position.x = Math.max(-boundary, Math.min(boundary, playerState.position.x));
+            playerState.position.z = Math.max(-boundary, Math.min(boundary, playerState.position.z));
+            
+            // Update mesh position
+            player.position.copy(playerState.position);
+            
+            // Update camera to follow player
+            camera.position.x = playerState.position.x;
+            camera.position.z = playerState.position.z + CONFIG.CAMERA_DISTANCE;
+            camera.lookAt(player.position);
+        }
+
+        // Update HUD
+        function updateHUD() {
+            document.getElementById('score').textContent = stats.score;
+            document.getElementById('moneyCollected').textContent = stats.moneyCollected.toFixed(2);
+            document.getElementById('playerSize').textContent = playerState.size.toFixed(1) + 'x';
+            document.getElementById('totalTransactions').textContent = stats.totalTransactions;
+            document.getElementById('activeAnimals').textContent = stats.activeAnimals;
+            document.getElementById('usdcCount').textContent = stats.usdc;
+            document.getElementById('usdtCount').textContent = stats.usdt;
+            document.getElementById('daiCount').textContent = stats.dai;
+        }
+
+        // WebSocket Connection
+        function connectWebSocket() {
+            updateConnectionStatus('connecting');
+            updateLoadingStatus('Connecting to transaction stream...');
+            
+            ws = new WebSocket(CONFIG.WS_URL);
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                updateConnectionStatus('connected');
+                updateLoadingStatus('Connected! Starting game...');
+                setTimeout(() => {
+                    document.getElementById('loadingScreen').style.display = 'none';
+                    gameRunning = true;
+                    gameStartTime = Date.now();
+                }, 1000);
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('Transaction received:', data);
+                    
+                    // Update statistics
+                    stats.totalTransactions++;
+                    const token = data.stablecoin.toLowerCase();
+                    if (stats[token] !== undefined) {
+                        stats[token]++;
+                    }
+                    
+                    // Create animal from transaction
+                    if (gameRunning && !isPaused) {
+                        createAnimalFromTransaction(data);
+                    }
+                    
+                    updateHUD();
+                } catch (error) {
+                    console.error('Failed to parse transaction:', error);
+                }
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus('disconnected');
+                updateLoadingStatus('Connection error. Retrying...');
+                setTimeout(connectWebSocket, 3000);
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                updateConnectionStatus('disconnected');
+                if (gameRunning) {
+                    setTimeout(connectWebSocket, 3000);
+                }
+            };
+        }
+
+        // Update Connection Status
+        function updateConnectionStatus(status) {
+            const element = document.getElementById('connectionStatus');
+            element.className = `connection-status ${status}`;
+            
+            const statusText = document.getElementById('statusText');
+            switch(status) {
+                case 'connected':
+                    statusText.textContent = 'Connected';
+                    break;
+                case 'connecting':
+                    statusText.textContent = 'Connecting...';
+                    break;
+                case 'disconnected':
+                    statusText.textContent = 'Disconnected';
+                    break;
+            }
+        }
+
+        // Update Loading Status
+        function updateLoadingStatus(message) {
+            document.getElementById('loadingStatus').textContent = message;
+        }
+
+        // Game Over
+        function gameOver() {
+            if (!gameRunning) return;
+            
+            gameRunning = false;
+            
+            // Calculate survival time
+            const survivalTime = Math.floor((Date.now() - gameStartTime) / 1000);
+            
+            // Update game over screen
+            document.getElementById('finalScore').textContent = stats.score;
+            document.getElementById('finalMoney').textContent = stats.moneyCollected.toFixed(2);
+            document.getElementById('animalsEaten').textContent = stats.animalsEaten;
+            document.getElementById('survivalTime').textContent = survivalTime;
+            
+            // Show game over screen
+            document.getElementById('gameOverScreen').classList.add('active');
+        }
+
+        // Restart Game
+        function restartGame() {
+            // Reset stats
+            stats.score = 0;
+            stats.moneyCollected = 0;
+            stats.animalsEaten = 0;
+            
+            // Reset player
+            playerState.position.set(0, 1, 0);
+            playerState.velocity.set(0, 0, 0);
+            playerState.size = CONFIG.PLAYER_START_SIZE;
+            playerState.health = 100;
+            
+            // Clear animals
+            animals.forEach(animal => scene.remove(animal.mesh));
+            animals = [];
+            
+            // Update player mesh
+            player.geometry.dispose();
+            player.geometry = new THREE.SphereGeometry(playerState.size, 32, 16);
+            player.position.copy(playerState.position);
+            
+            // Hide game over screen
+            document.getElementById('gameOverScreen').classList.remove('active');
+            
+            // Start game
+            gameRunning = true;
+            gameStartTime = Date.now();
+            
+            updateHUD();
+        }
+
+        // Input Handlers
+        document.addEventListener('keydown', (event) => {
+            switch(event.key.toLowerCase()) {
+                case 'arrowup':
+                case 'w':
+                    keys.forward = true;
+                    break;
+                case 'arrowdown':
+                case 's':
+                    keys.backward = true;
+                    break;
+                case 'arrowleft':
+                case 'a':
+                    keys.left = true;
+                    break;
+                case 'arrowright':
+                case 'd':
+                    keys.right = true;
+                    break;
+                case 'shift':
+                    keys.shift = true;
+                    break;
+                case ' ':
+                    keys.space = true;
+                    event.preventDefault();
+                    break;
+                case 'p':
+                    isPaused = !isPaused;
+                    break;
+                case 'r':
+                    if (!gameRunning) restartGame();
+                    break;
+            }
+        });
+
+        document.addEventListener('keyup', (event) => {
+            switch(event.key.toLowerCase()) {
+                case 'arrowup':
+                case 'w':
+                    keys.forward = false;
+                    break;
+                case 'arrowdown':
+                case 's':
+                    keys.backward = false;
+                    break;
+                case 'arrowleft':
+                case 'a':
+                    keys.left = false;
+                    break;
+                case 'arrowright':
+                case 'd':
+                    keys.right = false;
+                    break;
+                case 'shift':
+                    keys.shift = false;
+                    break;
+                case ' ':
+                    keys.space = false;
+                    break;
+            }
+        });
+
+        // Window Resize Handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Animation Loop
+        let lastTime = 0;
+        function animate(currentTime) {
+            requestAnimationFrame(animate);
+            
+            const deltaTime = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+            
+            if (gameRunning && !isPaused && deltaTime < 0.1) {
+                updatePlayer(deltaTime);
+                updateAnimals(deltaTime);
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        // Initialize Game
+        function init() {
+            updateLoadingStatus('Initializing game engine...');
+            initScene();
+            connectWebSocket();
+            animate(0);
+        }
+
+        // Start the game
+        init();
+    </script>
+</body>
+</html>

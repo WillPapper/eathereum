@@ -1,0 +1,199 @@
+# Block Monitor
+
+A Rust-based blockchain monitor that tracks stablecoin transactions (USDC, USDT, DAI) on Base network and broadcasts them via WebSocket.
+
+## Features
+
+- Polls RPC endpoint every 2 seconds for new blocks
+- Parses ERC-20 transfer and transferFrom transactions
+- Publishes transactions to Redis for scalable distribution
+- Broadcasts transaction data via WebSocket to connected clients (backwards compatible)
+- Supports multiple concurrent WebSocket connections
+- Health check endpoint for monitoring
+
+## Stablecoins Tracked
+
+**⚠️ IMPORTANT: These are Base Network addresses (Chain ID: 8453), NOT Ethereum mainnet!**
+
+On Base Network:
+- **USDC**: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` ([View on BaseScan](https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913))
+- **USDT**: `0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2` ([View on BaseScan](https://basescan.org/token/0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2))
+- **DAI**: `0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb` ([View on BaseScan](https://basescan.org/token/0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb))
+
+Source: [Base Official Documentation](https://docs.base.org/)
+
+## Local Development
+
+1. **Setup Git Hooks** (one-time setup)
+   ```bash
+   # From project root
+   ./setup-hooks.sh
+   # This enables automatic cargo fmt on every commit
+   ```
+
+2. **Setup Environment**
+   ```bash
+   cd block-monitor
+   cp .env.example .env
+   # Edit .env and add your RPC URL
+   ```
+
+3. **Build and Run**
+   ```bash
+   cargo build --release
+   cargo run
+   ```
+
+4. **Code Formatting**
+   ```bash
+   cargo fmt        # Format code manually
+   cargo fmt --check # Check formatting without changes
+   ```
+
+3. **WebSocket Connection**
+   - Connect to `ws://localhost:8080`
+   - Receive JSON messages with transaction data
+
+## Deployment on Render.com
+
+### As a Background Worker (Recommended)
+
+The server runs as a continuous background worker that polls every 2 seconds:
+
+1. **Fork/Clone Repository**
+   - Push code to your GitHub repository
+
+2. **Create Background Worker**
+   - Go to [Render Dashboard](https://dashboard.render.com)
+   - Click "New +" → "Background Worker"
+   - Connect your GitHub repository
+   - Use these settings:
+     - **Name**: block-monitor
+     - **Runtime**: Rust
+     - **Build Command**: `cargo build --release`
+     - **Start Command**: `./target/release/block-monitor`
+
+3. **Set Environment Variables**
+   - `RPC_URL`: Your Base network RPC endpoint (Alchemy, Infura, QuickNode, etc.)
+   - `REDIS_URL`: Redis connection URL (optional, format: `redis://host:port`)
+   - `PORT`: 8080 (WebSocket port)
+   - `HEALTH_PORT`: 8081 (Health check port)
+   - `RUST_LOG`: info
+
+4. **Deploy**
+   - The worker will start automatically and run continuously
+   - It polls the blockchain every 2 seconds
+   - WebSocket server runs on port 8080 for client connections
+
+### Alternative: Using render.yaml (Recommended)
+
+Deploy directly using the provided configuration with auto-deploy enabled:
+
+```bash
+# Push render.yaml to your repo, then in Render:
+# 1. New → Blueprint
+# 2. Connect your repo
+# 3. Render will auto-detect render.yaml
+# 4. Auto-deploy is enabled - future pushes to main will deploy automatically
+```
+
+**Note**: Auto-deploy is enabled by default in `render.yaml`. Every push to your main branch will trigger a new deployment automatically.
+
+### Monitoring
+
+- Worker logs show block processing and found transactions
+- Health endpoint available at port 8081
+- WebSocket connections logged in real-time
+
+## WebSocket Message Format
+
+```json
+{
+  "stablecoin": "USDC",
+  "amount": "100.000000",
+  "from": "0x123...",
+  "to": "0x456...",
+  "block_number": 12345678,
+  "tx_hash": "0xabc..."
+}
+```
+
+## Environment Variables
+
+- `RPC_URL`: Base network RPC endpoint (required)
+  - Supports any provider: Alchemy, Infura, QuickNode, etc.
+  - Example: `https://base-mainnet.g.alchemy.com/v2/YOUR_KEY`
+- `REDIS_URL`: Redis connection URL (optional)
+  - Format: `redis://username:password@host:port/db`
+  - Example: `redis://localhost:6379`
+- `PORT`: WebSocket server port (default: 8080)
+- `HEALTH_PORT`: Health check server port (default: 8081)
+- `RUST_LOG`: Log level (default: info)
+
+## Redis Integration
+
+When `REDIS_URL` is configured, the monitor publishes transaction data to Redis:
+
+### Data Structures
+
+1. **Pub/Sub Channel**: `stablecoin:transactions`
+   - Real-time transaction stream
+   - Clients can subscribe to receive instant updates
+
+2. **List**: `stablecoin:recent_transactions`
+   - Stores last 1000 transactions
+   - LIFO order (newest first)
+   - Use `LRANGE stablecoin:recent_transactions 0 99` to get last 100
+
+3. **Keys**: `stablecoin:tx:{tx_hash}`
+   - Individual transaction lookup by hash
+   - TTL: 1 hour
+   - Example: `GET stablecoin:tx:0xabc123...`
+
+### Connecting WebSocket Service to Redis
+
+```javascript
+// Example Node.js WebSocket service
+const redis = require('redis');
+const subscriber = redis.createClient({ url: process.env.REDIS_URL });
+
+subscriber.subscribe('stablecoin:transactions');
+subscriber.on('message', (channel, message) => {
+  const transaction = JSON.parse(message);
+  // Broadcast to WebSocket clients
+  wss.clients.forEach(client => {
+    client.send(message);
+  });
+});
+```
+
+## Architecture
+
+```
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐
+│   RPC Node  │────▶│    Server    │────▶│  WebSocket   │
+│   Provider  │     │   (Polling)  │     │   Clients    │
+└─────────────┘     └──────────────┘     └──────────────┘
+      ▲                    │                     │
+      │                    ▼                     ▼
+  Base Network      Parse ERC-20 TXs      Visualizer
+```
+
+## Performance
+
+- Polls every 2 seconds for new blocks
+- Processes all transactions in each block
+- Minimal memory footprint (~50MB)
+- Can handle 100+ concurrent WebSocket connections
+
+## Monitoring
+
+The server logs:
+- Block processing progress
+- Found stablecoin transfers
+- WebSocket connections/disconnections
+- Any errors during processing
+
+## License
+
+MIT
