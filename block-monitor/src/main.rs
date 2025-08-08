@@ -6,7 +6,7 @@ use alloy::{
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
 use redis::aio::MultiplexedConnection;
-use redis::{AsyncCommands, Client as RedisClient};
+use redis::Client as RedisClient;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
@@ -332,9 +332,7 @@ impl StablecoinMonitor {
             // Serialize transaction data
             if let Ok(json_data) = serde_json::to_string(tx_data) {
                 // Use Redis Streams for reliable message delivery
-                let stream_key = "stablecoin:stream:all";
-                let stablecoin_stream =
-                    format!("stablecoin:stream:{}", tx_data.stablecoin.to_lowercase());
+                let stream_key = "stablecoin:transactions";
 
                 // Create entries for the stream
                 let block_str = tx_data.block_number.to_string();
@@ -361,56 +359,6 @@ impl StablecoinMonitor {
                 {
                     error!("Failed to add to Redis stream {}: {}", stream_key, e);
                 }
-
-                // Add to stablecoin-specific stream
-                if let Err(e) = redis::cmd("XADD")
-                    .arg(&stablecoin_stream)
-                    .arg("MAXLEN")
-                    .arg("~")
-                    .arg(5000)
-                    .arg("*")
-                    .arg(&entries)
-                    .query_async::<String>(&mut conn)
-                    .await
-                {
-                    error!("Failed to add to Redis stream {}: {}", stablecoin_stream, e);
-                }
-
-                // Still publish to pub/sub for backward compatibility
-                let channel = "stablecoin:transactions";
-                if let Err(e) = conn.publish::<_, _, ()>(channel, &json_data).await {
-                    error!("Failed to publish to Redis channel: {}", e);
-                }
-
-                // Store in sorted set by block number for range queries
-                let sorted_set = format!("stablecoin:blocks:{}", tx_data.stablecoin.to_lowercase());
-                if let Err(e) = conn
-                    .zadd::<_, _, _, ()>(&sorted_set, &json_data, tx_data.block_number as f64)
-                    .await
-                {
-                    error!("Failed to add to sorted set: {}", e);
-                }
-
-                // Store transaction by hash for lookup with longer TTL
-                let hash_key = format!("stablecoin:tx:{}", tx_data.tx_hash);
-                if let Err(e) = conn
-                    .set_ex::<_, _, ()>(hash_key, &json_data, 7200) // Expire after 2 hours
-                    .await
-                {
-                    error!("Failed to store transaction in Redis: {}", e);
-                }
-
-                // Update statistics
-                let stats_key = format!("stablecoin:stats:{}", tx_data.stablecoin.to_lowercase());
-                let _ = conn
-                    .hincr::<_, _, _, i64>(&stats_key, "total_transactions", 1)
-                    .await;
-                let _ = conn
-                    .hset::<_, _, _, ()>(&stats_key, "last_block", tx_data.block_number)
-                    .await;
-                let _ = conn
-                    .hset::<_, _, _, ()>(&stats_key, "last_tx_hash", &tx_data.tx_hash)
-                    .await;
             }
         }
     }
