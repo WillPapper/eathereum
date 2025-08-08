@@ -1,14 +1,14 @@
 # Eathereum 🌳
 
-A PVP game where you consume smaller stablecoin transfers and avoid larger ones to grow before getting eaten.
+A PvE game where you consume smaller stablecoin transfers and avoid larger ones to grow before getting eaten.
 
 ## Overview
 
-Eathereum is a multiplayer game built on real-time Base network data. Each stablecoin transaction (USDC, USDT, DAI) becomes an animal in the game world. Players control an animal that grows by eating smaller transactions and dies when eaten by larger ones. Size correlates to transaction value.
+Eathereum is a single-player game built on real-time Base network data. Each stablecoin transaction (USDC, USDT, DAI) becomes an animal in the game world. Players control an animal that grows by eating smaller transactions and dies when eaten by larger ones. Size correlates to transaction value.
 
 ## Goal
 
-To gamify blockchain data into a competitive experience. Inspired by early 2010s Bitcoin visualizations like [BitListen](https://www.bitlisten.com/) that let you feel the real-time growth of the Bitcoin network, Eathereum aims to show the same growth trends for stablecoins in a tangible way. Where BitListen converts Bitcoin transactions to audio, Eathereum converts stablecoin transactions into gameplay entities. Players compete in real-time against actual transaction flows on Base, experiencing the scale and velocity of stablecoin adoption through game mechanics.
+To gamify blockchain data into an engaging PvE experience. Inspired by early 2010s Bitcoin visualizations like [BitListen](https://www.bitlisten.com/) that let you feel the real-time growth of the Bitcoin network, Eathereum aims to show the same growth trends for stablecoins in a tangible way. Where BitListen converts Bitcoin transactions to audio, Eathereum converts stablecoin transactions into gameplay entities. Players survive in real-time against actual transaction flows on Base, experiencing the scale and velocity of stablecoin adoption through game mechanics.
 
 ## Architecture
 
