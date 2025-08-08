@@ -4847,14 +4847,14 @@ function showGameOverScreen(reason) {
                 ${gameState.startTime ? `<p style="font-size: 14px; margin: 10px 0;">Survived: ${Math.floor((gameState.endTime - gameState.startTime) / 1000)} seconds</p>` : ''}
             </div>
             <div style="margin-top: 30px;">
-                <button onclick="restartGame()" style="
+                <button id="try-again-btn" style="
                     background: linear-gradient(135deg, #43e97b, #38f9d7);
                     color: white; border: none; padding: 15px 30px; border-radius: 10px;
                     font-size: 18px; font-weight: bold; cursor: pointer; margin: 0 10px;
                     transition: transform 0.2s;">
                     🔄 Try Again
                 </button>
-                <button onclick="exitToGarden()" style="
+                <button id="exit-garden-btn" style="
                     background: linear-gradient(135deg, #667eea, #764ba2);
                     color: white; border: none; padding: 15px 30px; border-radius: 10px;
                     font-size: 18px; font-weight: bold; cursor: pointer; margin: 0 10px;
@@ -4866,6 +4866,42 @@ function showGameOverScreen(reason) {
         </div>
     `;
     document.body.appendChild(gameOverDiv);
+    
+    // Add button event listeners after DOM is created
+    const tryAgainBtn = document.getElementById('try-again-btn');
+    const exitGardenBtn = document.getElementById('exit-garden-btn');
+    
+    if (tryAgainBtn) {
+        tryAgainBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            console.log('Try Again button clicked');
+            restartGame();
+        });
+        
+        // Add hover effect
+        tryAgainBtn.addEventListener('mouseenter', () => {
+            tryAgainBtn.style.transform = 'scale(1.05)';
+        });
+        tryAgainBtn.addEventListener('mouseleave', () => {
+            tryAgainBtn.style.transform = 'scale(1)';
+        });
+    }
+    
+    if (exitGardenBtn) {
+        exitGardenBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            console.log('Exit to Garden button clicked');
+            exitToGarden();
+        });
+        
+        // Add hover effect
+        exitGardenBtn.addEventListener('mouseenter', () => {
+            exitGardenBtn.style.transform = 'scale(1.05)';
+        });
+        exitGardenBtn.addEventListener('mouseleave', () => {
+            exitGardenBtn.style.transform = 'scale(1)';
+        });
+    }
     
     // Store the listener function globally so we can remove it later
     window.gameOverRestartListener = (event) => {
@@ -4935,8 +4971,88 @@ function showGameOverScreen(reason) {
 
 // Restart the game
 function restartGame() {
-    // Simply reload the page for now
-    location.reload();
+    console.log('Restarting game...');
+    
+    // Remove game over screen
+    const gameOverScreen = document.getElementById('game-over-screen');
+    if (gameOverScreen) {
+        gameOverScreen.remove();
+    }
+    
+    // Remove any event listeners
+    if (window.gameOverRestartListener) {
+        document.removeEventListener('keydown', window.gameOverRestartListener, true);
+        document.removeEventListener('click', window.gameOverRestartListener, true);
+        window.removeEventListener('keydown', window.gameOverRestartListener, true);
+        window.removeEventListener('click', window.gameOverRestartListener, true);
+        delete window.gameOverRestartListener;
+    }
+    
+    // Reset game state
+    gameOver = false;
+    gameState.isGameOver = false;
+    gameState.lives = 1;
+    gameState.currentScore = 0;
+    moneyCollected = 0;
+    
+    // Reset player
+    playerControls.size = 1.0;
+    naturalPlayerSize = 1.0;
+    currentLeverageMultiplier = 1.0;
+    leverageActive = false;
+    speedrunActive = false;
+    playerControls.speed = originalPlayerSpeed;
+    
+    // Clear any active effects
+    if (leverageEffectTimer) {
+        clearTimeout(leverageEffectTimer);
+        leverageEffectTimer = null;
+    }
+    if (speedrunEffectTimer) {
+        clearTimeout(speedrunEffectTimer);
+        speedrunEffectTimer = null;
+    }
+    
+    // Reset player position
+    if (playerControls.mesh) {
+        playerControls.mesh.position.set(0, playerControls.size * 0.5 - 30, 0);
+        playerControls.velocity.set(0, 0, 0);
+        
+        // Update player scale
+        playerControls.mesh.scale.setScalar(playerControls.size);
+    }
+    
+    // Clear all power-up fruits
+    powerUpFruits.forEach(fruit => scene.remove(fruit));
+    powerUpFruits = [];
+    leverageFruits.forEach(fruit => scene.remove(fruit));
+    leverageFruits = [];
+    speedrunFruits.forEach(fruit => scene.remove(fruit));
+    speedrunFruits = [];
+    
+    // Reset timers
+    gameState.startTime = Date.now();
+    gameState.endTime = null;
+    lastPowerUpTime = Date.now();
+    lastLeverageFruitTime = Date.now();
+    lastSpeedrunFruitTime = Date.now();
+    
+    // Keep playing
+    playerControls.isPlaying = true;
+    
+    // Update UI
+    updateStats();
+    const playBtn = document.getElementById('play-btn');
+    if (playBtn) {
+        playBtn.textContent = '🛑 Stop';
+        playBtn.classList.add('active');
+    }
+    const gameStatus = document.getElementById('game-status');
+    if (gameStatus) {
+        gameStatus.style.display = 'block';
+    }
+    
+    console.log('Game restarted successfully');
 }
 
 // Make restartGame globally accessible
