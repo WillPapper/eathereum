@@ -4883,7 +4883,7 @@ function showGameOverScreen(reason) {
         document.addEventListener('click', window.gameOverRestartListener, true);
         window.addEventListener('keydown', window.gameOverRestartListener, true);
         window.addEventListener('click', window.gameOverRestartListener, true);
-    }, 500);
+    }, 750);
     
     // Make plants glow red to show danger
     particles.forEach(plant => {
