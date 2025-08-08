@@ -6,7 +6,7 @@ mod redis;
 mod websocket;
 
 use config::Config;
-use error::{Result, ServerError};
+use error::Result;
 use health::{HealthServer, update_health_status};
 use message::MessageProcessor;
 use redis::RedisConsumer;
@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tracing::{error, info};
 use uuid::Uuid;
 use warp::Filter;
-use websocket::{ClientManager, handle_connection, handler};
+use websocket::{ClientManager, handle_connection};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
     
     // Load configuration
     let config = Config::from_env()?;
-    config.validate().map_err(|e| ServerError::Config(e))?;
+    config.validate()?;
     
     info!("Starting Game Server");
     info!("Redis: {}", config.mask_redis_url());
@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
     // Setup WebSocket server
     let ws_route = warp::path("ws")
         .and(warp::ws())
-        .and(handler::with_client_manager(client_manager.clone()))
+        .and(websocket::handler::with_client_manager(client_manager.clone()))
         .map(|ws: warp::ws::Ws, client_manager| {
             ws.on_upgrade(move |socket| {
                 let client_id = format!("client-{}", Uuid::new_v4());
@@ -123,30 +123,34 @@ fn init_logging() {
 }
 
 async fn run_message_processor(
-    mut processor: MessageProcessor,
+    processor: MessageProcessor,
     client_manager: Arc<ClientManager>,
     health_status: Arc<tokio::sync::RwLock<health::HealthStatus>>,
 ) -> Result<()> {
-    let mut health_interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
-    
-    loop {
-        tokio::select! {
-            _ = health_interval.tick() => {
-                let metrics = processor.get_metrics().await;
-                let client_count = client_manager.get_client_count().await;
-                
-                update_health_status(
-                    health_status.clone(),
-                    true, // Redis connected (we're processing messages)
-                    client_count,
-                    metrics.messages_processed,
-                ).await;
-            }
-            result = processor.run() => {
-                return result;
-            }
+    // Periodically update health status
+    let health_updater = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            let metrics = processor.get_metrics().await;
+            let client_count = client_manager.get_client_count().await;
+            
+            update_health_status(
+                health_status.clone(),
+                true, // Redis connected (we're processing messages)
+                client_count,
+                metrics.messages_processed,
+            ).await;
         }
-    }
+    });
+    
+    // Run the processor
+    let result = processor.run().await;
+    
+    // Stop health updater
+    health_updater.abort();
+    
+    result
 }
 
 async fn run_ping_task(client_manager: Arc<ClientManager>, interval_secs: u64) {
