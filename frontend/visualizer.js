@@ -864,18 +864,31 @@ class TransactionAnimal {
     
     // New AI behavior system for survival and alliance modes
     updateAIBehavior() {
-        // Default behavior - react to player if close
-        if (playerControls.mesh) {
-            this.handlePlayerInteraction();
+        // If actively merging, that takes absolute priority
+        if (this.aiState === 'merging') {
+            this.handleAllianceMode();
+            return; // Skip all other behaviors when merging
         }
         
-        // Alliance mode: animals merge to challenge player
-        if (difficultyLevel === 'alliance' || this.aiState === 'merging') {
+        // Alliance mode: check for merging opportunities
+        if (difficultyLevel === 'alliance') {
             this.handleAllianceMode();
+            // Alliance animals not merging still react to player
+            if (this.aiState !== 'merging' && playerControls.mesh) {
+                this.handlePlayerInteraction();
+            }
         }
         // Survival mode: animals hunt each other
         else if (difficultyLevel === 'survival') {
             this.handleSurvivalMode();
+            // Survival animals also react to player when not hunting
+            if (this.aiState !== 'hunting' && playerControls.mesh) {
+                this.handlePlayerInteraction();
+            }
+        }
+        // Normal behavior - react to player if close
+        else if (playerControls.mesh) {
+            this.handlePlayerInteraction();
         }
     }
     
@@ -3393,6 +3406,7 @@ function checkDifficultyScaling() {
             difficultyLevel = 'alliance';
             allianceActive = true;
             console.log(`⚔️ ALLIANCE MODE ACTIVATED! You're too powerful (${(smallerRatio * 100).toFixed(1)}% smaller). Animals will team up against you!`);
+            console.log(`   Player size: ${playerControls.size.toFixed(1)}, Largest animal: ${largestAnimalSize.toFixed(1)}, Total animals: ${animals.length}`);
             
             // Start the alliance behavior
             initiateAnimalAlliance();
@@ -3491,10 +3505,18 @@ function initiateAnimalAlliance() {
         return;
     }
     
-    // Sort animals by size (largest first)
-    const sortedAnimals = [...animals].sort((a, b) => b.size - a.size);
+    // Filter out animals already in merging state
+    const availableAnimals = animals.filter(a => a.aiState !== 'merging');
     
-    console.log(`🔍 Checking ${sortedAnimals.length} animals for alliance potential...`);
+    if (availableAnimals.length < 2) {
+        console.log(`⚠️ Not enough available animals for new alliance (${availableAnimals.length} available, ${animals.length - availableAnimals.length} already merging)`);
+        return;
+    }
+    
+    // Sort available animals by size (largest first)
+    const sortedAnimals = [...availableAnimals].sort((a, b) => b.size - a.size);
+    
+    console.log(`🔍 Checking ${sortedAnimals.length} available animals for alliance potential (${animals.length - availableAnimals.length} already merging)...`);
     
     // Find pairs of animals to merge
     const mergePairs = [];
