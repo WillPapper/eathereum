@@ -8,7 +8,7 @@ Eathereum is a multiplayer game built on real-time Base network data. Each stabl
 
 ## Goal
 
-To gamify blockchain data into a competitive experience. Inspired by early 2010s Bitcoin visualizations like [Bitlisten](https://www.bitlisten.com/) that let you feel the real-time growth of the Bitcoin network, Eathereum aims to show the same growth trends for stablecoins in a tangible way. Where Bitlisten converts Bitcoin transactions to audio, Eathereum converts stablecoin transactions into gameplay entities. Players compete in real-time against actual transaction flows on Base, experiencing the scale and velocity of stablecoin adoption through game mechanics.
+To gamify blockchain data into a competitive experience. Inspired by early 2010s Bitcoin visualizations like [BitListen](https://www.bitlisten.com/) that let you feel the real-time growth of the Bitcoin network, Eathereum aims to show the same growth trends for stablecoins in a tangible way. Where BitListen converts Bitcoin transactions to audio, Eathereum converts stablecoin transactions into gameplay entities. Players compete in real-time against actual transaction flows on Base, experiencing the scale and velocity of stablecoin adoption through game mechanics.
 
 ## Architecture
 
