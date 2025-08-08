@@ -1,5 +1,7 @@
 # Eathereum 🌳
 
+![Eathereum Logo](frontend/img/eathereum-logo.png)
+
 A PvE game where you consume smaller stablecoin transfers and avoid larger ones to grow before getting eaten.
 
 ## Overview
