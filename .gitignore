@@ -23,6 +23,10 @@ target
 # Cargo
 exex/target/
 
+
+# Test images folder
+visualizer/testimages/
+
 # Environment files
 .env
 .env.local
