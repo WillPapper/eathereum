@@ -11,15 +11,79 @@ Rust service that monitors Base network for stablecoin transactions and publishe
 - **Redis Publisher**: Streams transactions to Redis
 - **WebSocket Server**: Direct client connections (fallback)
 - **Health Server**: HTTP endpoint for monitoring
+### File Structure
+
+```
+block-monitor/
+├── src/
+│   ├── main.rs              # Application entry point and orchestration
+│   ├── lib.rs               # Module declarations
+│   ├── config.rs            # Configuration constants and stablecoin addresses
+│   ├── transaction.rs       # Transaction data model
+│   ├── blockchain.rs        # Blockchain interaction and log processing
+│   ├── monitor.rs           # Main monitoring loop and coordination
+│   ├── redis_publisher.rs   # Redis stream publishing logic
+│   ├── websocket_server.rs  # WebSocket server for real-time updates
+│   └── health_server.rs     # Health check endpoint
+├── Cargo.toml               # Dependencies
+└── render.yaml              # Render.com deployment config
+```
+
+### Module Responsibilities
+
+#### `config.rs`
+- Defines stablecoin contract addresses for Base network
+- Stores configuration constants (polling intervals, limits)
+- Provides stablecoin metadata (name, decimals)
+
+#### `transaction.rs`
+- Defines the `TransactionData` struct
+- Shared data model for transactions across the system
+
+#### `blockchain.rs`
+- `BlockchainMonitor` struct handles all blockchain interactions
+- Processes blocks and extracts Transfer events
+- Formats transaction amounts based on token decimals
+- Handles RPC provider errors gracefully
+
+#### `monitor.rs`
+- `StablecoinMonitor` orchestrates the monitoring process
+- Manages the polling loop and block processing
+- Coordinates between blockchain, Redis, and WebSocket components
+- Tracks last processed block
+
+#### `redis_publisher.rs`
+- `RedisPublisher` handles Redis connections with retry logic
+- Publishes transactions to Redis streams
+- Manages connection failures gracefully
+- Auto-trims stream to prevent unbounded growth
+
+#### `websocket_server.rs`
+- `WebSocketServer` manages WebSocket connections
+- Broadcasts transactions to all connected clients
+- Handles client connections/disconnections
+- Supports ping/pong for connection health
+
+#### `health_server.rs`
+- `HealthServer` provides HTTP health check endpoint
+- Used by container orchestrators and load balancers
+- Simple HTTP 200 OK response
+
+#### `main.rs`
+- Initializes all components
+- Sets up graceful shutdown handling
+- Manages concurrent task execution
+- Validates configuration on startup
 
 ### Data Flow
 
-1. Poll Base network every 2 seconds
-2. Fetch blocks with full transaction details
-3. Filter for stablecoin Transfer events
-4. Decode transaction data (amount, from, to)
-5. Publish to Redis stream `stablecoin:transactions`
-6. Broadcast to connected WebSocket clients
+1. **Blockchain Monitoring**: `BlockchainMonitor` polls Base network every 2 seconds
+2. **Event Processing**: Extracts ERC20 Transfer events for configured stablecoins
+3. **Orchestration**: `StablecoinMonitor` coordinates processing and distribution
+4. **Publishing**: Sends transaction data to:
+   - `RedisPublisher` → Redis stream (`stablecoin:transactions`)
+   - `WebSocketServer` → Connected clients (real-time broadcast)
+5. **Health Monitoring**: `HealthServer` provides HTTP endpoint for service health
 
 ## Configuration
 
