@@ -3534,14 +3534,26 @@ function initiateAnimalAlliance() {
         return;
     }
     
+    // Calculate how desperate the alliance should be
+    const smallerRatio = animals.filter(a => a.size < playerControls.size).length / animals.length;
+    const largestAnimalSize = Math.max(...animals.map(a => a.size), 0);
+    const dominanceFactor = playerControls.size / Math.max(largestAnimalSize, 1);
+    
     // Sort available animals by size (largest first)
     const sortedAnimals = [...availableAnimals].sort((a, b) => b.size - a.size);
     
-    console.log(`🔍 Checking ${sortedAnimals.length} available animals for alliance potential (${animals.length - availableAnimals.length} already merging)...`);
+    console.log(`🔍 Checking ${sortedAnimals.length} available animals for alliance (dominance: ${dominanceFactor.toFixed(1)}x larger than biggest animal)...`);
     
     // Find pairs of animals to merge
     const mergePairs = [];
     const alreadyPaired = new Set();
+    
+    // More aggressive pairing when player is extremely dominant
+    const maxPairs = dominanceFactor > 3 ? 6 : dominanceFactor > 2 ? 5 : dominanceFactor > 1.5 ? 4 : 3;
+    const sizeThreshold = Math.max(0.2, 0.5 / Math.sqrt(dominanceFactor)); // Much lower threshold when dominant
+    const mergeFactor = dominanceFactor > 2 ? 0.9 : 0.7; // More size contribution when desperate
+    
+    console.log(`🎯 Alliance aggressiveness: ${maxPairs} max pairs, ${(sizeThreshold * 100).toFixed(0)}% size threshold`);
     
     // More aggressive pairing - pair any animals that together could be threatening
     for (let i = 0; i < sortedAnimals.length - 1; i++) {
@@ -3555,10 +3567,10 @@ function initiateAnimalAlliance() {
             
             const animal2 = sortedAnimals[j];
             
-            // More lenient merge criteria - any two that together are half player size
-            const combinedSize = animal1.size + animal2.size * 0.7;
+            // Aggressive merge criteria scales with dominance
+            const combinedSize = animal1.size + animal2.size * mergeFactor;
             
-            if (combinedSize > playerControls.size * 0.5) { // Lowered threshold
+            if (combinedSize > playerControls.size * sizeThreshold) {
                 mergePairs.push([animal1, animal2]);
                 alreadyPaired.add(animal1);
                 alreadyPaired.add(animal2);
@@ -3572,30 +3584,35 @@ function initiateAnimalAlliance() {
                 animal2.mergePartner = animal1;
                 animal2.behaviorState = 'wandering'; // Reset behavior state
                 
-                console.log(`💑 Pairing ${animal1.animalType} (${animal1.size.toFixed(1)}) with ${animal2.animalType} (${animal2.size.toFixed(1)}) → Combined: ${combinedSize.toFixed(1)}`);
+                console.log(`💑 Pairing ${animal1.animalType} (${animal1.size.toFixed(1)}) with ${animal2.animalType} (${animal2.size.toFixed(1)}) → Combined: ${combinedSize.toFixed(1)} (need >${(playerControls.size * sizeThreshold).toFixed(1)})`);
                 
-                // Allow more pairs - up to 3-4
-                if (mergePairs.length >= 3) break;
+                // Allow more pairs when extremely dominant
+                if (mergePairs.length >= maxPairs) break;
             }
         }
         
-        if (mergePairs.length >= 3) break;
+        if (mergePairs.length >= maxPairs) break;
     }
     
     if (mergePairs.length === 0) {
-        console.log('⚠️ No suitable pairs found - animals too small');
-        // Force merge the largest animals anyway
-        if (sortedAnimals.length >= 2) {
-            const animal1 = sortedAnimals[0];
-            const animal2 = sortedAnimals[1];
+        console.log('⚠️ No suitable pairs found - forcing aggressive merges!');
+        // When extremely dominant, force merge multiple pairs
+        const forcePairs = Math.min(Math.floor(sortedAnimals.length / 2), dominanceFactor > 2 ? 4 : 2);
+        
+        for (let i = 0; i < forcePairs * 2 && i < sortedAnimals.length - 1; i += 2) {
+            const animal1 = sortedAnimals[i];
+            const animal2 = sortedAnimals[i + 1];
             
-            animal1.aiState = 'merging';
-            animal1.mergePartner = animal2;
-            animal2.aiState = 'merging';
-            animal2.mergePartner = animal1;
-            
-            console.log(`🔴 FORCED PAIRING: ${animal1.animalType} with ${animal2.animalType}`);
-            mergePairs.push([animal1, animal2]);
+            if (animal1 && animal2) {
+                animal1.aiState = 'merging';
+                animal1.mergePartner = animal2;
+                animal2.aiState = 'merging';
+                animal2.mergePartner = animal1;
+                
+                const combinedSize = animal1.size + animal2.size * 0.9;
+                console.log(`🔴 FORCED PAIRING: ${animal1.animalType} (${animal1.size.toFixed(1)}) + ${animal2.animalType} (${animal2.size.toFixed(1)}) = ${combinedSize.toFixed(1)}`);
+                mergePairs.push([animal1, animal2]);
+            }
         }
     }
     
@@ -3610,9 +3627,13 @@ function mergeAnimals(animal1, animal2) {
     const absorber = animal1.size >= animal2.size ? animal1 : animal2;
     const absorbed = animal1.size < animal2.size ? animal1 : animal2;
     
-    // Calculate new size (not full addition to prevent instant giants)
-    const sizeFactor = 0.7; // Absorbed animal contributes 70% of its size
-    const newSize = Math.min(absorber.size + absorbed.size * sizeFactor, playerControls.size * 1.5); // Cap at 1.5x player size
+    // More aggressive size gains when player is extremely dominant
+    const dominanceFactor = playerControls.size / Math.max(absorber.size, absorbed.size, 1);
+    const sizeFactor = dominanceFactor > 2 ? 0.9 : dominanceFactor > 1.5 ? 0.8 : 0.7;
+    
+    // Higher size cap when player is very dominant
+    const sizeCap = dominanceFactor > 3 ? 2.0 : dominanceFactor > 2 ? 1.7 : 1.5;
+    const newSize = Math.min(absorber.size + absorbed.size * sizeFactor, playerControls.size * sizeCap);
     
     // Update the absorber
     absorber.size = newSize;
@@ -3647,8 +3668,20 @@ function mergeAnimals(animal1, animal2) {
 // Check if alliance has created enough competitive animals
 function checkAllianceProgress() {
     const competitiveAnimals = animals.filter(a => a.size > playerControls.size * 0.8).length;
+    const smallerRatio = animals.filter(a => a.size < playerControls.size).length / animals.length;
     
-    if (competitiveAnimals >= 2) {
+    // Calculate dominance factor (how overpowered the player is)
+    const dominanceFactor = Math.min(smallerRatio / ALLIANCE_THRESHOLD, 1.2); // 1.0 at 90%, up to 1.2 at 100%
+    const largestAnimalSize = Math.max(...animals.map(a => a.size), 0);
+    const sizeGapFactor = playerControls.size / Math.max(largestAnimalSize, 1); // How much bigger player is than largest animal
+    
+    // More aggressive merging when player is extremely dominant
+    const aggressiveness = dominanceFactor * Math.min(sizeGapFactor / 2, 2); // Scale up to 2x aggressive
+    
+    // Need more competitive animals when player is very dominant
+    const requiredCompetitors = sizeGapFactor > 3 ? 3 : 2;
+    
+    if (competitiveAnimals >= requiredCompetitors) {
         allianceActive = false;
         console.log(`⚔️ Alliance successful! ${competitiveAnimals} animals can now challenge you.`);
         
@@ -3660,13 +3693,18 @@ function checkAllianceProgress() {
                 animal.hasMerged = false;
             }
         });
-    } else if (allianceActive && animals.length > 4) {
-        // Continue merging if needed
+    } else if (allianceActive && animals.length > 2) {
+        // More aggressive timing based on dominance
+        const baseDelay = 3000;
+        const adjustedDelay = Math.max(500, baseDelay / aggressiveness); // Faster when more dominant
+        
+        console.log(`⏰ Next alliance attempt in ${(adjustedDelay/1000).toFixed(1)}s (dominance: ${(smallerRatio*100).toFixed(0)}%, aggression: ${aggressiveness.toFixed(1)}x)`);
+        
         setTimeout(() => {
             if (allianceActive) {
                 initiateAnimalAlliance();
             }
-        }, 3000);
+        }, adjustedDelay);
     }
 }
 
