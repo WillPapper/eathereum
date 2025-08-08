@@ -4498,13 +4498,7 @@ function addToTransactionFeed(data) {
     });
     
     // Create Basescan link if we have a tx hash
-    let txHash = data.tx_hash;
-    
-    // Handle Some() wrapper from Rust
-    if (txHash && txHash.startsWith('Some(')) {
-        txHash = txHash.slice(5, -1); // Remove "Some(" and ")"
-    }
-    
+    const txHash = data.tx_hash;
     const shortHash = txHash ? `${txHash.slice(0, 6)}...${txHash.slice(-4)}` : '';
     const basescanUrl = txHash ? `https://basescan.org/tx/${txHash}` : null;
     

@@ -285,7 +285,7 @@ impl StablecoinMonitor {
                         from: format!("{:?}", from),
                         to: format!("{:?}", to),
                         block_number,
-                        tx_hash: format!("{:?}", log.transaction_hash),
+                        tx_hash: format!("{:#x}", log.transaction_hash.unwrap_or_default()),
                     };
 
                     info!(
