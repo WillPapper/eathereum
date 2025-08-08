@@ -4497,9 +4497,28 @@ function addToTransactionFeed(data) {
         second: '2-digit' 
     });
     
+    // Create Basescan link if we have a tx hash
+    let txHash = data.tx_hash;
+    
+    // Handle Some() wrapper from Rust
+    if (txHash && txHash.startsWith('Some(')) {
+        txHash = txHash.slice(5, -1); // Remove "Some(" and ")"
+    }
+    
+    const shortHash = txHash ? `${txHash.slice(0, 6)}...${txHash.slice(-4)}` : '';
+    const basescanUrl = txHash ? `https://basescan.org/tx/${txHash}` : null;
+    
     txItem.innerHTML = `
-        <span class="tx-coin ${coin}">${data.stablecoin}</span>
-        <span class="tx-amount">$${formatNumber(amount)}</span>
+        <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+            <span class="tx-coin ${coin}">${data.stablecoin}</span>
+            <span class="tx-amount">$${formatNumber(amount)}</span>
+            ${basescanUrl ? 
+                `<a href="${basescanUrl}" target="_blank" rel="noopener noreferrer" class="tx-link" title="View on Basescan: ${txHash}">
+                    ${shortHash}
+                </a>` : 
+                ''
+            }
+        </div>
         <span class="tx-time">${time}</span>
     `;
     
