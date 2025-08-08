@@ -882,8 +882,12 @@ class TransactionAnimal {
             return;
         }
         
-        // PREY BEHAVIOR - Smaller animals flee
-        if (isSmaller && distanceToPlayer < this.fleeRange) {
+        // PREY BEHAVIOR - Smaller animals flee (also check if within range for newly smaller animals)
+        if (isSmaller && (distanceToPlayer < this.fleeRange || this.behaviorState === 'chasing')) {
+            // Check if behavior needs to change (was chasing but now should flee)
+            if (this.behaviorState === 'chasing') {
+                console.log(`🔄 ${this.animalType} switching from chasing to fleeing - player grew bigger!`);
+            }
             if (this.behaviorState !== 'fleeing') {
                 this.behaviorState = 'fleeing';
                 console.log(`🏃 ${this.animalType} fleeing from player at distance ${distanceToPlayer.toFixed(1)}`);
@@ -911,8 +915,12 @@ class TransactionAnimal {
             // Store last player sighting for smarter fleeing
             this.lastPlayerSighting = playerControls.mesh.position.clone();
         }
-        // PREDATOR BEHAVIOR - Larger animals chase
-        else if (isLarger && distanceToPlayer < this.chaseRange) {
+        // PREDATOR BEHAVIOR - Larger animals chase (also check for newly larger animals)
+        else if (isLarger && (distanceToPlayer < this.chaseRange || this.behaviorState === 'fleeing')) {
+            // Check if behavior needs to change (was fleeing but now should chase)
+            if (this.behaviorState === 'fleeing') {
+                console.log(`🔄 ${this.animalType} switching from fleeing to chasing - player shrank!`);
+            }
             if (this.behaviorState !== 'chasing') {
                 this.behaviorState = 'chasing';
                 console.log(`🎯 ${this.animalType} hunting player at distance ${distanceToPlayer.toFixed(1)}`);
@@ -945,8 +953,18 @@ class TransactionAnimal {
         }
         // NEUTRAL BEHAVIOR - Similar size or outside immediate threat/chase range
         else {
-            // Gradually return to wandering
-            if (this.behaviorState !== 'wandering') {
+            // Check if we need to stop chasing/fleeing due to size change
+            if (this.behaviorState === 'chasing' && !isLarger) {
+                console.log(`🛑 ${this.animalType} stops chasing - no longer bigger than player`);
+                this.behaviorState = 'wandering';
+                this.speed = this.baseSpeed;
+            } else if (this.behaviorState === 'fleeing' && !isSmaller) {
+                console.log(`🛑 ${this.animalType} stops fleeing - no longer smaller than player`);
+                this.behaviorState = 'wandering';
+                this.speed = this.baseSpeed;
+            }
+            // Gradually return to wandering for other cases
+            else if (this.behaviorState !== 'wandering') {
                 // Smooth transition back to wandering
                 this.speed = this.speed * 0.9 + this.baseSpeed * 0.1;
                 if (Math.abs(this.speed - this.baseSpeed) < 0.1) {
