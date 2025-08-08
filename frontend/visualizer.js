@@ -4835,86 +4835,83 @@ function showGameOverScreen(reason) {
     // Death message - always from larger animal now
     const deathMessage = 'You were eaten by a larger animal!';
     
+    const isMobile = window.innerWidth <= 768;
+    
     gameOverDiv.innerHTML = `
         <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
                     background: linear-gradient(135deg, rgba(255, 0, 0, 0.9), rgba(139, 0, 0, 0.9)); 
-                    color: white; padding: 40px; border-radius: 20px; text-align: center; 
-                    z-index: 2000; box-shadow: 0 10px 40px rgba(0,0,0,0.8); min-width: 400px;">
-            <h1 style="margin: 0 0 20px 0; font-size: 48px;">💀 GAME OVER 💀</h1>
-            <p style="font-size: 24px; margin: 10px 0;">${deathMessage}</p>
+                    color: white; padding: ${isMobile ? '30px 20px' : '40px'}; border-radius: 20px; text-align: center; 
+                    z-index: 2000; box-shadow: 0 10px 40px rgba(0,0,0,0.8); 
+                    min-width: ${isMobile ? '90%' : '400px'}; max-width: ${isMobile ? '95%' : 'none'};">
+            <h1 style="margin: 0 0 20px 0; font-size: ${isMobile ? '36px' : '48px'};">💀 GAME OVER 💀</h1>
+            <p style="font-size: ${isMobile ? '20px' : '24px'}; margin: 10px 0;">${deathMessage}</p>
             <div style="margin: 30px 0;">
-                <p style="font-size: 20px; margin: 10px 0;">Final Score: <span style="color: #FFD700; font-size: 32px; font-weight: bold;">$${gameState.currentScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
-                <p style="font-size: 16px; margin: 10px 0;">High Score: <span style="color: #FFD700;">$${gameState.highScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
-                ${gameState.startTime ? `<p style="font-size: 14px; margin: 10px 0;">Survived: ${Math.floor((gameState.endTime - gameState.startTime) / 1000)} seconds</p>` : ''}
+                <p style="font-size: ${isMobile ? '18px' : '20px'}; margin: 10px 0;">Final Score: <span style="color: #FFD700; font-size: ${isMobile ? '28px' : '32px'}; font-weight: bold;">$${gameState.currentScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+                <p style="font-size: ${isMobile ? '14px' : '16px'}; margin: 10px 0;">High Score: <span style="color: #FFD700;">$${gameState.highScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+                ${gameState.startTime ? `<p style="font-size: ${isMobile ? '12px' : '14px'}; margin: 10px 0;">Survived: ${Math.floor((gameState.endTime - gameState.startTime) / 1000)} seconds</p>` : ''}
             </div>
             <div style="margin-top: 30px;">
                 <button id="try-again-btn" style="
                     background: linear-gradient(135deg, #43e97b, #38f9d7);
-                    color: white; border: none; padding: 15px 30px; border-radius: 10px;
-                    font-size: 18px; font-weight: bold; cursor: pointer; margin: 0 10px;
-                    transition: transform 0.2s;">
+                    color: white; border: none; padding: ${isMobile ? '20px 40px' : '15px 30px'}; border-radius: 10px;
+                    font-size: ${isMobile ? '20px' : '18px'}; font-weight: bold; cursor: pointer;
+                    transition: transform 0.2s; touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;">
                     🔄 Try Again
                 </button>
-                <button id="exit-garden-btn" style="
-                    background: linear-gradient(135deg, #667eea, #764ba2);
-                    color: white; border: none; padding: 15px 30px; border-radius: 10px;
-                    font-size: 18px; font-weight: bold; cursor: pointer; margin: 0 10px;
-                    transition: transform 0.2s;">
-                    🏡 Exit to Garden
-                </button>
             </div>
-            <p style="margin-top: 20px; font-size: 14px; color: #FFD700;">Press any key or click to try again</p>
+            <p style="margin-top: 20px; font-size: ${isMobile ? '12px' : '14px'}; color: #FFD700;">Tap anywhere or press any key to try again</p>
         </div>
     `;
     document.body.appendChild(gameOverDiv);
     
     // Add button event listeners after DOM is created
     const tryAgainBtn = document.getElementById('try-again-btn');
-    const exitGardenBtn = document.getElementById('exit-garden-btn');
     
     if (tryAgainBtn) {
-        tryAgainBtn.addEventListener('click', (e) => {
+        // Use both click and touchend for better mobile support
+        const handleTryAgain = (e) => {
+            e.preventDefault();
             e.stopPropagation();
-            console.log('Try Again button clicked');
-            restartGame();
-        });
+            console.log('Try Again button activated');
+            
+            // Prevent double-tap
+            tryAgainBtn.disabled = true;
+            
+            // Small delay to ensure clean restart
+            setTimeout(() => {
+                restartGame();
+            }, 100);
+        };
         
-        // Add hover effect
-        tryAgainBtn.addEventListener('mouseenter', () => {
-            tryAgainBtn.style.transform = 'scale(1.05)';
-        });
-        tryAgainBtn.addEventListener('mouseleave', () => {
-            tryAgainBtn.style.transform = 'scale(1)';
-        });
-    }
-    
-    if (exitGardenBtn) {
-        exitGardenBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            console.log('Exit to Garden button clicked');
-            exitToGarden();
-        });
+        tryAgainBtn.addEventListener('click', handleTryAgain);
+        tryAgainBtn.addEventListener('touchend', handleTryAgain);
         
-        // Add hover effect
-        exitGardenBtn.addEventListener('mouseenter', () => {
-            exitGardenBtn.style.transform = 'scale(1.05)';
-        });
-        exitGardenBtn.addEventListener('mouseleave', () => {
-            exitGardenBtn.style.transform = 'scale(1)';
-        });
+        // Add hover effect for desktop
+        if (!isMobile) {
+            tryAgainBtn.addEventListener('mouseenter', () => {
+                tryAgainBtn.style.transform = 'scale(1.05)';
+            });
+            tryAgainBtn.addEventListener('mouseleave', () => {
+                tryAgainBtn.style.transform = 'scale(1)';
+            });
+        }
     }
     
     // Store the listener function globally so we can remove it later
     window.gameOverRestartListener = (event) => {
-        // Stop event propagation
-        event.stopPropagation();
-        
         // Don't restart on Escape key
         if (event.type === 'keydown' && event.code === 'Escape') {
             return;
         }
-        // Don't restart if clicking a button (let button handlers work)
-        if (event.type === 'click' && (event.target.tagName === 'BUTTON' || event.target.closest('button'))) {
+        
+        // Don't restart if clicking/touching a button (let button handlers work)
+        if (event.target && (event.target.tagName === 'BUTTON' || event.target.closest('button'))) {
+            return;
+        }
+        
+        // Don't restart on touchend events (handled by button)
+        if (event.type === 'touchend') {
             return;
         }
         
@@ -4923,6 +4920,7 @@ function showGameOverScreen(reason) {
         // Remove listeners first
         document.removeEventListener('keydown', window.gameOverRestartListener, true);
         document.removeEventListener('click', window.gameOverRestartListener, true);
+        document.removeEventListener('touchstart', window.gameOverRestartListener, true);
         window.removeEventListener('keydown', window.gameOverRestartListener, true);
         window.removeEventListener('click', window.gameOverRestartListener, true);
         
@@ -4930,17 +4928,18 @@ function showGameOverScreen(reason) {
         delete window.gameOverRestartListener;
         
         // Restart the game
-        window.restartGame();
+        restartGame();
     };
     
     // Add listeners after a short delay to avoid accidental restarts
-    // Use capture phase to ensure we get the events first
     setTimeout(() => {
         console.log('Adding game over interaction listeners');
+        // Always add keyboard listener
         document.addEventListener('keydown', window.gameOverRestartListener, true);
-        document.addEventListener('click', window.gameOverRestartListener, true);
-        window.addEventListener('keydown', window.gameOverRestartListener, true);
-        window.addEventListener('click', window.gameOverRestartListener, true);
+        
+        // Add click listener for tap-anywhere functionality
+        // But use a passive listener that won't interfere with button taps
+        document.addEventListener('click', window.gameOverRestartListener, false);
     }, 750);
     
     // Make plants glow red to show danger
