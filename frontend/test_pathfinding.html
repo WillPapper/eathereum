@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pathfinding Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            margin: 0;
+            padding: 0;
+            background: #000;
+            color: #0f0;
+            overflow: hidden;
+        }
+        
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border: 1px solid #0f0;
+            z-index: 100;
+            max-width: 400px;
+        }
+        
+        h3 {
+            margin: 0 0 10px 0;
+            color: #0ff;
+        }
+        
+        .stat {
+            margin: 5px 0;
+        }
+        
+        .label {
+            color: #ff0;
+            display: inline-block;
+            width: 150px;
+        }
+        
+        .value {
+            color: #fff;
+        }
+        
+        .fleeing {
+            color: #ffff00;
+        }
+        
+        .chasing {
+            color: #ff4444;
+        }
+        
+        .wandering {
+            color: #44ff44;
+        }
+        
+        button {
+            background: #222;
+            color: #0f0;
+            border: 1px solid #0f0;
+            padding: 5px 10px;
+            margin: 5px 5px 5px 0;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background: #333;
+        }
+        
+        #controls {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #0f0;
+        }
+        
+        input[type="range"] {
+            width: 200px;
+        }
+        
+        .range-value {
+            display: inline-block;
+            width: 50px;
+            color: #0ff;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>🎮 Pathfinding Test</h3>
+        <div id="stats">
+            <div class="stat">
+                <span class="label">Player Size:</span>
+                <span class="value" id="player-size">1.0</span>
+            </div>
+            <div class="stat">
+                <span class="label">Player Speed:</span>
+                <span class="value" id="player-speed">10</span>
+            </div>
+            <div class="stat">
+                <span class="label">Animals Fleeing:</span>
+                <span class="value fleeing" id="fleeing-count">0</span>
+            </div>
+            <div class="stat">
+                <span class="label">Animals Chasing:</span>
+                <span class="value chasing" id="chasing-count">0</span>
+            </div>
+            <div class="stat">
+                <span class="label">Animals Wandering:</span>
+                <span class="value wandering" id="wandering-count">0</span>
+            </div>
+        </div>
+        
+        <div id="controls">
+            <h3>Controls</h3>
+            <div>
+                <button onclick="spawnSmallAnimals()">Spawn Small Animals</button>
+                <button onclick="spawnLargeAnimals()">Spawn Large Animals</button>
+                <button onclick="clearAnimals()">Clear All</button>
+            </div>
+            <div style="margin-top: 10px;">
+                <label>Player Size: 
+                    <input type="range" id="size-slider" min="0.5" max="4" step="0.1" value="1" onchange="updatePlayerSize(this.value)">
+                    <span class="range-value" id="size-value">1.0</span>
+                </label>
+            </div>
+            <div>
+                <label>Detection Range: 
+                    <input type="range" id="detection-slider" min="5" max="30" step="1" value="15" onchange="updateDetectionRange(this.value)">
+                    <span class="range-value" id="detection-value">15</span>
+                </label>
+            </div>
+        </div>
+        
+        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #0f0;">
+            <h3>Instructions</h3>
+            <div style="font-size: 12px; color: #888;">
+                • Use WASD/Arrow keys to move<br>
+                • Small animals (green) will flee<br>
+                • Large animals (red) will chase<br>
+                • Predators move at 85% player speed<br>
+                • Detection range: 15 units<br>
+                • Flee range: 12 units<br>
+                • Chase range: 20 units
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Log pathfinding events
+        console.log(`
+🎮 PATHFINDING TEST CONTROLS:
+================================
+Movement: WASD or Arrow Keys
+Player Size: Use slider to adjust
+Detection Range: Use slider to test
+
+EXPECTED BEHAVIORS:
+• Smaller animals flee when player is within 12 units
+• Larger animals chase when player is within 20 units  
+• Predators move at 85% of player speed
+• Prey panic more when player is closer
+• Animals zigzag when fleeing
+• Predators try to predict player movement
+
+TESTING SCENARIOS:
+1. Spawn small animals and chase them
+2. Spawn large animals and try to escape
+3. Change player size to flip predator/prey roles
+4. Adjust detection range to test awareness
+        `);
+        
+        // Mock functions for testing
+        function spawnSmallAnimals() {
+            console.log('Spawning 5 small animals (rabbits)...');
+            for (let i = 0; i < 5; i++) {
+                const data = {
+                    stablecoin: 'USDC',
+                    amount: Math.random() * 50 + 10, // 10-60 (small)
+                    from: '0x' + Math.random().toString(16).substr(2, 40),
+                    to: '0x' + Math.random().toString(16).substr(2, 40),
+                    block_number: 30000000 + Math.floor(Math.random() * 1000000),
+                    tx_hash: '0x' + Math.random().toString(16).substr(2, 64)
+                };
+                
+                // Dispatch spawn event
+                window.dispatchEvent(new CustomEvent('spawn:animal', { detail: data }));
+            }
+        }
+        
+        function spawnLargeAnimals() {
+            console.log('Spawning 3 large animals (bears)...');
+            for (let i = 0; i < 3; i++) {
+                const data = {
+                    stablecoin: 'DAI',
+                    amount: Math.random() * 100000 + 50000, // 50k-150k (large)
+                    from: '0x' + Math.random().toString(16).substr(2, 40),
+                    to: '0x' + Math.random().toString(16).substr(2, 40),
+                    block_number: 30000000 + Math.floor(Math.random() * 1000000),
+                    tx_hash: '0x' + Math.random().toString(16).substr(2, 64)
+                };
+                
+                // Dispatch spawn event
+                window.dispatchEvent(new CustomEvent('spawn:animal', { detail: data }));
+            }
+        }
+        
+        function clearAnimals() {
+            console.log('Clearing all animals...');
+            if (window.clearParticles) {
+                window.clearParticles();
+            }
+        }
+        
+        function updatePlayerSize(value) {
+            const size = parseFloat(value);
+            document.getElementById('size-value').textContent = size.toFixed(1);
+            document.getElementById('player-size').textContent = size.toFixed(1);
+            
+            if (window.playerControls) {
+                window.playerControls.size = size;
+                console.log(`Player size updated to ${size}`);
+            }
+        }
+        
+        function updateDetectionRange(value) {
+            const range = parseInt(value);
+            document.getElementById('detection-value').textContent = range;
+            
+            console.log(`Detection range updated to ${range} units`);
+            // This would need to update all animals' detection range
+            if (window.animals) {
+                window.animals.forEach(animal => {
+                    animal.detectionRange = range;
+                });
+            }
+        }
+        
+        // Update stats periodically
+        setInterval(() => {
+            if (window.animals) {
+                let fleeing = 0, chasing = 0, wandering = 0;
+                
+                window.animals.forEach(animal => {
+                    switch(animal.behaviorState) {
+                        case 'fleeing': fleeing++; break;
+                        case 'chasing': chasing++; break;
+                        case 'wandering': wandering++; break;
+                    }
+                });
+                
+                document.getElementById('fleeing-count').textContent = fleeing;
+                document.getElementById('chasing-count').textContent = chasing;
+                document.getElementById('wandering-count').textContent = wandering;
+            }
+            
+            if (window.playerControls) {
+                document.getElementById('player-speed').textContent = playerControls.speed;
+                document.getElementById('player-size').textContent = playerControls.size.toFixed(1);
+            }
+        }, 100);
+    </script>
+    
+    <!-- Load the game -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="websocket.js"></script>
+    <script src="visualizer.js"></script>
+    
+    <script>
+        // Auto-start in play mode for testing
+        setTimeout(() => {
+            if (window.toggleGameMode) {
+                console.log('Starting game mode for pathfinding test...');
+                window.toggleGameMode();
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

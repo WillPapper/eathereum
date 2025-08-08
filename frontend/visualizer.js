@@ -526,10 +526,17 @@ class TransactionAnimal {
         // Movement properties
         this.velocity = new THREE.Vector3();
         this.targetDirection = Math.random() * Math.PI * 2;
-        this.speed = 0.5 + Math.random() * 1.5; // Much slower base speed (was 5-15, now 0.5-2)
+        this.baseSpeed = 0.5 + Math.random() * 1.5; // Base speed for wandering
+        this.speed = this.baseSpeed;
         this.turnSpeed = 0.02 + Math.random() * 0.02; // Slower turning
         this.jumpCooldown = 0;
-        this.fleeRadius = 5; // Much smaller distance at which animal reacts to player
+        
+        // Pathfinding properties
+        this.detectionRange = 15; // Range at which animals detect player (15 units)
+        this.fleeRange = 12; // Range at which prey starts fleeing (12 units)
+        this.chaseRange = 20; // Range at which predators start chasing (20 units)
+        this.behaviorState = 'wandering'; // 'wandering', 'fleeing', 'chasing'
+        this.lastPlayerSighting = null;
         
         // AI State properties for survival mode
         this.aiState = 'roaming'; // 'roaming', 'hunting', 'eating', 'growing'
@@ -545,18 +552,21 @@ class TransactionAnimal {
         if (this.amount < 100) {
             this.createSmallAnimal(); // Rabbit
             this.animalType = 'rabbit';
-            this.speed *= 1.2; // Rabbits are slightly faster
+            this.baseSpeed *= 1.2; // Rabbits are slightly faster
+            this.speed = this.baseSpeed;
         } else if (this.amount < 1000) {
             this.createMediumAnimal(); // Fox
             this.animalType = 'fox';
         } else if (this.amount < 10000) {
             this.createLargeAnimal(); // Deer
             this.animalType = 'deer';
-            this.speed *= 0.9; // Deer are slightly slower
+            this.baseSpeed *= 0.9; // Deer are slightly slower
+            this.speed = this.baseSpeed;
         } else {
             this.createGiantAnimal(); // Bear (whale transaction)
             this.animalType = 'bear';
-            this.speed *= 0.6; // Bears are slower but valuable
+            this.baseSpeed *= 0.6; // Bears are slower but valuable
+            this.speed = this.baseSpeed;
         }
         
         // Start with small scale for spawn animation
@@ -749,13 +759,13 @@ class TransactionAnimal {
             this.targetDirection += normalizedDiff * 0.15;
         }
         
-        // Random wandering behavior when not actively hunting or fleeing
-        if (this.aiState === 'roaming' || this.aiState === 'growing') {
+        // Random wandering behavior when not actively hunting, fleeing, or chasing
+        if ((this.aiState === 'roaming' || this.aiState === 'growing') && this.behaviorState === 'wandering') {
             this.targetDirection += (Math.random() - 0.5) * this.turnSpeed;
             
-            // Maintain natural wandering speed (unless hunting)
-            if (this.aiState !== 'hunting') {
-                this.speed = 0.5 + Math.random() * 1;
+            // Return to base speed when wandering
+            if (this.speed !== this.baseSpeed) {
+                this.speed = this.speed * 0.95 + this.baseSpeed * 0.05;
             }
         }
         
@@ -841,44 +851,121 @@ class TransactionAnimal {
         }
     }
     
-    // Handle player interaction (flee/chase)
+    // Handle player interaction with intelligent pathfinding
     handlePlayerInteraction() {
-        const distanceToPlayer = playerControls.mesh.position.distanceTo(this.mesh.position);
+        if (!playerControls.mesh || !playerControls.isPlaying) {
+            this.behaviorState = 'wandering';
+            this.speed = this.baseSpeed;
+            return;
+        }
         
-        // Only react to player if VERY close AND only sometimes
-        if (playerControls.isPlaying && distanceToPlayer < this.fleeRadius && Math.random() < 0.3) {
-            if (this.size < playerControls.size * 0.7) {
-                // Only much smaller animals flee, and only sometimes
-                const fleeDirection = new THREE.Vector3();
-                fleeDirection.subVectors(this.mesh.position, playerControls.mesh.position);
-                fleeDirection.y = 0;
-                fleeDirection.normalize();
-                
-                // Blend flee direction with current direction (don't change abruptly)
-                const fleeAngle = Math.atan2(fleeDirection.x, fleeDirection.z);
-                const directionDiff = fleeAngle - this.targetDirection;
-                let normalizedDiff = this.normalizeAngle(directionDiff);
-                
-                this.targetDirection += normalizedDiff * 0.2; // Gradual steering away
-                this.speed = Math.min(this.speed * 1.3, 2); // Slightly faster but not panic
-                
-            } else if (this.size > playerControls.size * 1.5) {
-                // Only much larger animals chase, and only rarely
-                if (Math.random() < 0.1) { // 10% chance to chase
-                    const chaseDirection = new THREE.Vector3();
-                    chaseDirection.subVectors(playerControls.mesh.position, this.mesh.position);
-                    chaseDirection.y = 0;
-                    chaseDirection.normalize();
-                    
-                    // Blend chase direction with current direction
-                    const chaseAngle = Math.atan2(chaseDirection.x, chaseDirection.z);
-                    const directionDiff = chaseAngle - this.targetDirection;
-                    let normalizedDiff = this.normalizeAngle(directionDiff);
-                    
-                    this.targetDirection += normalizedDiff * 0.15; // Even more gradual steering toward
-                    this.speed = Math.min(this.speed * 1.1, 1.5); // Less aggressive chasing
+        const distanceToPlayer = playerControls.mesh.position.distanceTo(this.mesh.position);
+        const isSmaller = this.size < playerControls.size;
+        const isLarger = this.size > playerControls.size;
+        
+        // Detection logic - animals only react within detection range
+        if (distanceToPlayer > this.detectionRange) {
+            // Outside detection range - wander normally
+            if (this.behaviorState !== 'wandering') {
+                this.behaviorState = 'wandering';
+                this.speed = this.baseSpeed;
+            }
+            return;
+        }
+        
+        // PREY BEHAVIOR - Smaller animals flee
+        if (isSmaller && distanceToPlayer < this.fleeRange) {
+            if (this.behaviorState !== 'fleeing') {
+                this.behaviorState = 'fleeing';
+                console.log(`🏃 ${this.animalType} fleeing from player at distance ${distanceToPlayer.toFixed(1)}`);
+            }
+            
+            // Calculate flee direction (away from player)
+            const fleeDirection = new THREE.Vector3();
+            fleeDirection.subVectors(this.mesh.position, playerControls.mesh.position);
+            fleeDirection.y = 0;
+            fleeDirection.normalize();
+            
+            // Smart fleeing - try to zigzag occasionally
+            const zigzag = Math.sin(Date.now() * 0.003) * 0.3;
+            const fleeAngle = Math.atan2(fleeDirection.x, fleeDirection.z) + zigzag;
+            
+            // Smooth turning toward flee direction
+            const directionDiff = this.normalizeAngle(fleeAngle - this.targetDirection);
+            this.targetDirection += directionDiff * 0.25; // Responsive turning
+            
+            // Flee speed based on proximity - panic more when closer
+            const panicFactor = 1 - (distanceToPlayer / this.fleeRange);
+            this.speed = this.baseSpeed * (1.5 + panicFactor * 0.5); // 1.5x to 2x base speed when fleeing
+            
+            // Store last player sighting for smarter fleeing
+            this.lastPlayerSighting = playerControls.mesh.position.clone();
+        }
+        // PREDATOR BEHAVIOR - Larger animals chase
+        else if (isLarger && distanceToPlayer < this.chaseRange) {
+            if (this.behaviorState !== 'chasing') {
+                this.behaviorState = 'chasing';
+                console.log(`🎯 ${this.animalType} hunting player at distance ${distanceToPlayer.toFixed(1)}`);
+            }
+            
+            // Calculate predictive chase direction (lead the target)
+            const playerVelocity = playerControls.velocity.clone();
+            const predictTime = distanceToPlayer / (playerControls.speed * 0.1); // Estimate intercept time
+            const predictedPosition = playerControls.mesh.position.clone();
+            predictedPosition.add(playerVelocity.clone().multiplyScalar(predictTime * 0.3)); // Partial prediction
+            
+            const chaseDirection = new THREE.Vector3();
+            chaseDirection.subVectors(predictedPosition, this.mesh.position);
+            chaseDirection.y = 0;
+            chaseDirection.normalize();
+            
+            // Calculate chase angle
+            const chaseAngle = Math.atan2(chaseDirection.x, chaseDirection.z);
+            
+            // Smooth but determined turning toward player
+            const directionDiff = this.normalizeAngle(chaseAngle - this.targetDirection);
+            this.targetDirection += directionDiff * 0.2; // Moderate turning speed
+            
+            // Chase speed - 85% of player speed to allow escape
+            const playerSpeed = playerControls.speed * (1 + playerControls.size * 0.1);
+            this.speed = playerSpeed * 0.085; // 85% of player speed (accounting for 0.1 velocity multiplier)
+            
+            // Store last player sighting
+            this.lastPlayerSighting = playerControls.mesh.position.clone();
+        }
+        // NEUTRAL BEHAVIOR - Similar size or outside immediate threat/chase range
+        else {
+            // Gradually return to wandering
+            if (this.behaviorState !== 'wandering') {
+                // Smooth transition back to wandering
+                this.speed = this.speed * 0.9 + this.baseSpeed * 0.1;
+                if (Math.abs(this.speed - this.baseSpeed) < 0.1) {
+                    this.behaviorState = 'wandering';
+                    this.speed = this.baseSpeed;
                 }
             }
+            
+            // If we have a last sighting and are fleeing, continue fleeing for a bit
+            if (this.lastPlayerSighting && this.behaviorState === 'fleeing') {
+                const timeSinceSighting = Date.now() - (this.lastSightingTime || Date.now());
+                if (timeSinceSighting < 2000) { // Continue fleeing for 2 seconds after losing sight
+                    const fleeDirection = new THREE.Vector3();
+                    fleeDirection.subVectors(this.mesh.position, this.lastPlayerSighting);
+                    fleeDirection.y = 0;
+                    fleeDirection.normalize();
+                    
+                    const fleeAngle = Math.atan2(fleeDirection.x, fleeDirection.z);
+                    const directionDiff = this.normalizeAngle(fleeAngle - this.targetDirection);
+                    this.targetDirection += directionDiff * 0.15;
+                } else {
+                    this.lastPlayerSighting = null;
+                }
+            }
+        }
+        
+        // Update last sighting time
+        if (distanceToPlayer < this.detectionRange) {
+            this.lastSightingTime = Date.now();
         }
     }
     
@@ -937,7 +1024,7 @@ class TransactionAnimal {
         if (bestTarget) {
             this.targetAnimal = bestTarget;
             this.aiState = 'hunting';
-            this.speed *= 1.5; // Speed boost while hunting
+            this.speed = this.baseSpeed * 1.5; // Speed boost while hunting
             console.log(`🎯 ${this.animalType} started hunting ${bestTarget.animalType} (distance: ${bestDistance.toFixed(1)})`);
         }
     }
