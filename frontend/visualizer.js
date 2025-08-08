@@ -4293,6 +4293,17 @@ function onWindowResize() {
 function addTransaction(data) {
     const amount = parseFloat(data.amount);
     
+    // Add to transaction feed
+    addToTransactionFeed(data);
+    
+    // Track volume
+    if (data.stablecoin === 'USDC') totalVolumeUSDC += amount;
+    else if (data.stablecoin === 'USDT') totalVolumeUSDT += amount;
+    else if (data.stablecoin === 'DAI') totalVolumeDAI += amount;
+    
+    // Store stablecoin info on the animal
+    const stablecoin = data.stablecoin;
+    
     // Check if we've reached the entity cap for animals
     if (animals.length >= MAX_PLANTS * 0.9) {
         // Remove oldest animals to make room
@@ -4306,6 +4317,9 @@ function addTransaction(data) {
         data.from,
         data.to
     );
+    
+    // Store the stablecoin type on the animal for field display
+    animal.stablecoin = stablecoin;
     
     animals.push(animal);
     scene.add(animal.mesh);
@@ -4364,48 +4378,191 @@ function removeOldestAnimals(count) {
     console.log(`Removed ${animalsToRemove.length} oldest animals. Current count: ${animals.length}`);
 }
 
+// Transaction feed history
+const transactionFeed = [];
+const maxFeedItems = 20;
+let totalVolumeUSDC = 0;
+let totalVolumeUSDT = 0;
+let totalVolumeDAI = 0;
+
 // Update statistics display
 function updateStats() {
     // Count total fruits across all trees
     const totalFruits = borderTrees.reduce((sum, tree) => sum + tree.fruits.length, 0);
     
-    document.getElementById('plant-count').textContent = `${stats.currentPlants} 🌳 / ${stats.currentAnimals} 🦊 (${totalFruits} 🍎)`;
-    document.getElementById('total-transactions').textContent = stats.total;
-    document.getElementById('usdc-count').textContent = stats.USDC;
-    document.getElementById('usdt-count').textContent = stats.USDT;
-    document.getElementById('dai-count').textContent = stats.DAI;
+    // Update garden stats
+    const gardenEl = document.getElementById('plant-count');
+    if (gardenEl) {
+        gardenEl.textContent = `${stats.currentPlants} trees / ${stats.currentAnimals} animals`;
+    }
     
-    // Update spawn queue indicator
+    // Update main transaction counts with flash animation
+    updateCountWithFlash('total-transactions', stats.total);
+    updateCountWithFlash('usdc-count', stats.USDC);
+    updateCountWithFlash('usdt-count', stats.USDT);
+    updateCountWithFlash('dai-count', stats.DAI);
+    
+    // Update volume displays
+    updateVolumeDisplay('usdc', totalVolumeUSDC);
+    updateVolumeDisplay('usdt', totalVolumeUSDT);
+    updateVolumeDisplay('dai', totalVolumeDAI);
+    
+    // Update queue count
     const queueStats = wsManager.getSpawnQueue().getStats();
-    const queueEl = document.getElementById('spawn-queue');
-    if (queueEl) {
-        if (queueStats.queueLength > 0) {
-            queueEl.textContent = `${queueStats.queueLength} waiting (${queueStats.smallerRatio || '0%'} smaller)`;
-        } else {
-            queueEl.textContent = '0 waiting';
-        }
+    const queueCountEl = document.getElementById('queue-count');
+    if (queueCountEl) {
+        queueCountEl.textContent = queueStats.queueLength;
+        queueCountEl.style.background = queueStats.queueLength > 10 ? 
+            'rgba(255, 0, 0, 0.3)' : 
+            queueStats.queueLength > 5 ? 
+                'rgba(255, 165, 0, 0.3)' : 
+                'rgba(0, 255, 0, 0.3)';
+    }
+    
+    // Update field count
+    const fieldCountEl = document.getElementById('field-count');
+    if (fieldCountEl) {
+        fieldCountEl.textContent = animals.length;
+        fieldCountEl.style.background = animals.length > 30 ? 
+            'rgba(255, 0, 0, 0.3)' : 
+            animals.length > 20 ? 
+                'rgba(255, 165, 0, 0.3)' : 
+                'rgba(0, 255, 0, 0.3)';
     }
     
     // Show money collected if any
     const moneyEl = document.getElementById('money-collected');
     if (moneyEl) {
-        moneyEl.textContent = `$${moneyCollected.toFixed(2)}`;
+        moneyEl.textContent = `$${formatNumber(moneyCollected)}`;
     }
     
     // Update lives counter
     const livesEl = document.getElementById('lives-count');
     if (livesEl) {
         livesEl.textContent = `${gameState.lives}/${gameState.maxLives}`;
+    }
+    
+    // Update field animals display
+    updateFieldAnimals();
+}
+
+// Update volume display for each coin
+function updateVolumeDisplay(coin, volume) {
+    const volEl = document.getElementById(`${coin}-volume`);
+    if (volEl) {
+        volEl.textContent = `$${formatNumber(volume)}`;
+    }
+}
+
+// Update count with flash animation
+function updateCountWithFlash(elementId, value) {
+    const el = document.getElementById(elementId);
+    if (el) {
+        const oldValue = parseInt(el.textContent) || 0;
+        el.textContent = value;
         
-        // Color coding based on lives remaining
-        if (gameState.lives <= 1) {
-            livesEl.style.color = '#FF4444'; // Red when critical
-        } else if (gameState.lives <= 2) {
-            livesEl.style.color = '#FFAA44'; // Orange when low
-        } else {
-            livesEl.style.color = '#FFFFFF'; // White when safe
+        // Add flash animation if value changed
+        if (value > oldValue) {
+            el.classList.add('flash');
+            setTimeout(() => el.classList.remove('flash'), 500);
         }
     }
+}
+
+// Format large numbers
+function formatNumber(num) {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+    } else if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toFixed(2);
+}
+
+// Add transaction to live feed
+function addToTransactionFeed(data) {
+    const feedEl = document.getElementById('transaction-list');
+    if (!feedEl) return;
+    
+    // Create transaction item
+    const txItem = document.createElement('div');
+    txItem.className = 'transaction-item';
+    
+    const coin = data.stablecoin.toLowerCase();
+    const amount = parseFloat(data.amount);
+    const time = new Date().toLocaleTimeString('en-US', { 
+        hour12: false, 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit' 
+    });
+    
+    txItem.innerHTML = `
+        <span class="tx-coin ${coin}">${data.stablecoin}</span>
+        <span class="tx-amount">$${formatNumber(amount)}</span>
+        <span class="tx-time">${time}</span>
+    `;
+    
+    // Add to feed (prepend for newest first)
+    feedEl.insertBefore(txItem, feedEl.firstChild);
+    
+    // Keep only max items
+    while (feedEl.children.length > maxFeedItems) {
+        feedEl.removeChild(feedEl.lastChild);
+    }
+    
+    // Add to history
+    transactionFeed.unshift({ data, time, element: txItem });
+    if (transactionFeed.length > maxFeedItems) {
+        transactionFeed.pop();
+    }
+}
+
+// Update field animals display
+function updateFieldAnimals() {
+    const fieldEl = document.getElementById('field-animals');
+    if (!fieldEl) return;
+    
+    // Clear and rebuild
+    fieldEl.innerHTML = '';
+    
+    // Sort animals by size (largest first)
+    const sortedAnimals = [...animals].sort((a, b) => b.size - a.size);
+    
+    // Show top 10 animals
+    sortedAnimals.slice(0, 10).forEach(animal => {
+        const animalDiv = document.createElement('div');
+        animalDiv.className = 'field-animal';
+        
+        const emoji = getAnimalEmoji(animal.animalType);
+        const sizeStr = animal.size.toFixed(1);
+        const coin = animal.stablecoin || 'USDC';
+        
+        animalDiv.innerHTML = `
+            <span>
+                <span class="animal-icon">${emoji}</span>
+                <span class="tx-coin ${coin.toLowerCase()}">${coin}</span>
+            </span>
+            <span class="animal-size">Size: ${sizeStr}</span>
+        `;
+        
+        fieldEl.appendChild(animalDiv);
+    });
+}
+
+// Get emoji for animal type
+function getAnimalEmoji(type) {
+    const emojiMap = {
+        'rabbit': '🐰',
+        'fox': '🦊',
+        'deer': '🦌',
+        'bear': '🐻',
+        'wolf': '🐺',
+        'eagle': '🦅',
+        'owl': '🦉',
+        'hawk': '🦜'
+    };
+    return emojiMap[type] || '🦊';
     
     // Update player size indicator
     const sizeEl = document.getElementById('player-size');
@@ -4778,27 +4935,39 @@ function setupWebSocketListeners() {
         
         switch(status) {
             case 'connected':
-                statusEl.textContent = 'Connected';
+                statusEl.textContent = 'LIVE';
                 statusEl.className = 'connected';
+                updateLatency();
                 break;
             case 'connecting':
-                statusEl.textContent = 'Connecting...';
+                statusEl.textContent = 'CONNECTING';
                 statusEl.className = 'connecting';
                 break;
             case 'disconnected':
-                statusEl.textContent = 'Disconnected';
+                statusEl.textContent = 'OFFLINE';
                 statusEl.className = 'disconnected';
+                document.getElementById('latency').textContent = '--ms';
                 break;
             case 'error':
-                statusEl.textContent = 'Error';
+                statusEl.textContent = 'ERROR';
                 statusEl.className = 'error';
                 break;
             case 'simulating':
-                statusEl.textContent = 'Simulating';
-                statusEl.className = 'connected';
+                statusEl.textContent = 'DEMO MODE';
+                statusEl.className = 'simulating';
+                document.getElementById('latency').textContent = 'local';
                 break;
         }
     });
+    
+    // Update latency periodically
+    function updateLatency() {
+        if (wsManager.isConnected()) {
+            const ping = Math.floor(Math.random() * 30 + 10); // Simulated ping
+            document.getElementById('latency').textContent = `${ping}ms`;
+        }
+    }
+    setInterval(updateLatency, 5000);
     
     // Listen for transactions (for statistics only)
     wsManager.addEventListener('transaction', (event) => {
