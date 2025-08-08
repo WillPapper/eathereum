@@ -2220,49 +2220,28 @@ function flashScreen(color, duration) {
 function handleGameOver() {
     gameOver = true;
     playerControls.isPlaying = false;
+    gameState.isGameOver = true;
     
-    // Create game over screen
-    const gameOverDiv = document.createElement('div');
-    gameOverDiv.id = 'game-over';
-    gameOverDiv.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(255, 0, 0, 0.9);
-        color: white;
-        padding: 40px;
-        border-radius: 20px;
-        text-align: center;
-        font-size: 24px;
-        z-index: 10000;
-        box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
-    `;
+    // Update game state
+    gameState.currentScore = moneyCollected;
+    gameState.endTime = Date.now();
     
-    gameOverDiv.innerHTML = `
-        <h1 style="margin: 0 0 20px 0; font-size: 48px;">GAME OVER!</h1>
-        <p style="margin: 20px 0;">You were eaten by a larger animal!</p>
-        <p style="margin: 20px 0; font-size: 32px; color: #FFD700;">💰 Final Score: $${moneyCollected.toFixed(2)}</p>
-        <p style="margin: 10px 0; font-size: 18px;">Your Size: ${playerControls.size.toFixed(2)}</p>
-        <button onclick="location.reload()" style="
-            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            border-radius: 10px;
-            font-size: 20px;
-            cursor: pointer;
-            margin-top: 20px;
-        ">🔄 Play Again</button>
-    `;
+    // Update high score
+    if (gameState.currentScore > gameState.highScore) {
+        gameState.highScore = gameState.currentScore;
+        localStorage.setItem('stablecoinHuntHighScore', gameState.highScore.toString());
+    }
     
-    document.body.appendChild(gameOverDiv);
+    // Use the new game over screen with click/key listeners
+    showGameOverScreen('larger animal');
     
     // Stop animation
     if (animationId) {
         cancelAnimationFrame(animationId);
         animationId = null;
     }
+    
+    console.log(`GAME OVER! Eaten by larger animal. Score: $${moneyCollected.toFixed(2)}`);
 }
 
 // Initialize Three.js scene
@@ -4744,8 +4723,8 @@ function checkBirdCollisions_REMOVED() {
         const plantCollisionRadius = plant.isFullyGrown ? plant.targetHeight * 0.5 : 0;
         
         if (distance < collisionRadius + plantCollisionRadius) {
-            // Game Over - hit a plant!
-            triggerGameOver('plant');
+            // Skip collision - plants are no longer deadly
+            // They're just decorative now
             return;
         }
     }
@@ -4820,51 +4799,30 @@ function showEatEffect(position, value, stablecoin) {
     // Show value text (optional - could add floating text here)
 }
 
-// Trigger game over (old function - kept for compatibility)
-function triggerGameOver(reason) {
-    if (gameState.isGameOver) return;
-    
-    gameState.isGameOver = true;
-    gameState.endTime = Date.now();
-    
-    // Stop player movement
-    if (playerControls.isPlaying) {
-        playerControls.velocity.set(0, 0, 0);
-        playerControls.moveForward = false;
-        playerControls.moveBackward = false;
-        playerControls.moveLeft = false;
-        playerControls.moveRight = false;
-        playerControls.rotateLeft = false;
-        playerControls.rotateRight = false;
-        playerControls.boost = false;
-    }
-    
-    // Update high score
-    if (gameState.currentScore > gameState.highScore) {
-        gameState.highScore = gameState.currentScore;
-        localStorage.setItem('stablecoinHuntHighScore', gameState.highScore.toString());
-    }
-    
-    // Show game over screen
-    showGameOverScreen(reason);
-    
-    console.log(`GAME OVER! Hit a ${reason}. Score: $${gameState.currentScore.toFixed(2)}`);
-}
-
 // Show game over screen
 function showGameOverScreen(reason) {
+    // Remove any existing game over screen
+    const existingScreen = document.getElementById('game-over-screen') || document.getElementById('game-over');
+    if (existingScreen) {
+        existingScreen.remove();
+    }
+    
     const gameOverDiv = document.createElement('div');
     gameOverDiv.id = 'game-over-screen';
+    
+    // Death message - always from larger animal now
+    const deathMessage = 'You were eaten by a larger animal!';
+    
     gameOverDiv.innerHTML = `
         <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
                     background: linear-gradient(135deg, rgba(255, 0, 0, 0.9), rgba(139, 0, 0, 0.9)); 
                     color: white; padding: 40px; border-radius: 20px; text-align: center; 
                     z-index: 2000; box-shadow: 0 10px 40px rgba(0,0,0,0.8); min-width: 400px;">
             <h1 style="margin: 0 0 20px 0; font-size: 48px;">💀 GAME OVER 💀</h1>
-            <p style="font-size: 24px; margin: 10px 0;">You hit a poisonous plant!</p>
+            <p style="font-size: 24px; margin: 10px 0;">${deathMessage}</p>
             <div style="margin: 30px 0;">
-                <p style="font-size: 20px; margin: 10px 0;">Final Score: <span style="color: #FFD700; font-size: 32px; font-weight: bold;">$${gameState.currentScore.toFixed(2)}</span></p>
-                <p style="font-size: 16px; margin: 10px 0;">High Score: <span style="color: #FFD700;">$${gameState.highScore.toFixed(2)}</span></p>
+                <p style="font-size: 20px; margin: 10px 0;">Final Score: <span style="color: #FFD700; font-size: 32px; font-weight: bold;">$${gameState.currentScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+                <p style="font-size: 16px; margin: 10px 0;">High Score: <span style="color: #FFD700;">$${gameState.highScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
                 ${gameState.startTime ? `<p style="font-size: 14px; margin: 10px 0;">Survived: ${Math.floor((gameState.endTime - gameState.startTime) / 1000)} seconds</p>` : ''}
             </div>
             <div style="margin-top: 30px;">
@@ -4883,9 +4841,49 @@ function showGameOverScreen(reason) {
                     🏡 Exit to Garden
                 </button>
             </div>
+            <p style="margin-top: 20px; font-size: 14px; color: #FFD700;">Press any key or click to try again</p>
         </div>
     `;
     document.body.appendChild(gameOverDiv);
+    
+    // Store the listener function globally so we can remove it later
+    window.gameOverRestartListener = (event) => {
+        // Stop event propagation
+        event.stopPropagation();
+        
+        // Don't restart on Escape key
+        if (event.type === 'keydown' && event.code === 'Escape') {
+            return;
+        }
+        // Don't restart if clicking a button (let button handlers work)
+        if (event.type === 'click' && (event.target.tagName === 'BUTTON' || event.target.closest('button'))) {
+            return;
+        }
+        
+        console.log('Restarting game from interaction:', event.type, event.code || 'click');
+        
+        // Remove listeners first
+        document.removeEventListener('keydown', window.gameOverRestartListener, true);
+        document.removeEventListener('click', window.gameOverRestartListener, true);
+        window.removeEventListener('keydown', window.gameOverRestartListener, true);
+        window.removeEventListener('click', window.gameOverRestartListener, true);
+        
+        // Clear the reference
+        delete window.gameOverRestartListener;
+        
+        // Restart the game
+        window.restartGame();
+    };
+    
+    // Add listeners after a short delay to avoid accidental restarts
+    // Use capture phase to ensure we get the events first
+    setTimeout(() => {
+        console.log('Adding game over interaction listeners');
+        document.addEventListener('keydown', window.gameOverRestartListener, true);
+        document.addEventListener('click', window.gameOverRestartListener, true);
+        window.addEventListener('keydown', window.gameOverRestartListener, true);
+        window.addEventListener('click', window.gameOverRestartListener, true);
+    }, 500);
     
     // Make plants glow red to show danger
     particles.forEach(plant => {
@@ -4920,6 +4918,9 @@ function restartGame() {
     location.reload();
 }
 
+// Make restartGame globally accessible
+window.restartGame = restartGame;
+
 // Exit to garden view
 function exitToGarden() {
     // Remove game over screen
@@ -4936,6 +4937,9 @@ function exitToGarden() {
     gameState.currentScore = 0;
     updateStats();
 }
+
+// Make exitToGarden globally accessible
+window.exitToGarden = exitToGarden;
 
 // Removed old bird flight physics function
 
@@ -5078,9 +5082,32 @@ function setupEventListeners() {
 // Setup player ground controls
 function setupPlayerControls() {
     let isPointerLocked = false;
+    let gameStarted = false;
+    
+    // Start game on any key press or click
+    const startGameOnInteraction = (event) => {
+        if (!gameStarted && !playerControls.isPlaying && !gameOver) {
+            // Don't start on Escape key or if clicking UI buttons
+            if (event.type === 'keydown' && event.code === 'Escape') {
+                return;
+            }
+            if (event.type === 'click' && event.target.tagName === 'BUTTON') {
+                return;
+            }
+            gameStarted = true;
+            toggleGameMode();
+        }
+    };
+    
+    // Add listeners for starting the game
+    document.addEventListener('keydown', startGameOnInteraction);
+    document.addEventListener('click', startGameOnInteraction);
     
     // Keyboard controls
     document.addEventListener('keydown', (event) => {
+        // Handle movement controls only if playing
+        if (!playerControls.isPlaying) return;
+        
         switch(event.code) {
             case 'KeyW':
             case 'ArrowUp':
