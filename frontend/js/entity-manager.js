@@ -161,6 +161,9 @@ export class EntityManager {
         this.plants.push(plant);
         this.sceneManager.addToScene(plant.mesh);
         this.gameState.updateStats('currentPlants', 1);
+        
+        // Update field counter UI
+        this.updateFieldCounter();
     }
     
     addAnimal(transactionData) {
@@ -178,6 +181,9 @@ export class EntityManager {
         this.animals.push(animal);
         this.sceneManager.addToScene(animal.mesh);
         this.gameState.updateStats('currentAnimals', 1);
+        
+        // Update field counter UI
+        this.updateFieldCounter();
     }
     
     spawnFromQueue(transactionData) {
@@ -383,6 +389,7 @@ export class EntityManager {
             if (!animal.isAlive) {
                 this.sceneManager.removeFromScene(animal.mesh);
                 this.gameState.updateStats('currentAnimals', -1);
+                this.updateFieldCounter();
                 return false;
             }
             
@@ -639,6 +646,18 @@ export class EntityManager {
         return null;
     }
     
+    updateFieldCounter() {
+        const fieldCount = document.getElementById('field-count');
+        if (fieldCount) {
+            fieldCount.textContent = this.animals.length + this.plants.length;
+        }
+        
+        const plantCount = document.getElementById('plant-count');
+        if (plantCount) {
+            plantCount.textContent = `${this.plants.length} trees / ${this.animals.length} animals`;
+        }
+    }
+    
     clearAll() {
         // Clear plants
         this.plants.forEach(plant => {
@@ -661,5 +680,8 @@ export class EntityManager {
         // Reset stats
         this.gameState.stats.currentPlants = 0;
         this.gameState.stats.currentAnimals = 0;
+        
+        // Update UI
+        this.updateFieldCounter();
     }
 }
