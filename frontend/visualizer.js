@@ -40,14 +40,19 @@ let gameState = {
     maxLives: 5 // Maximum lives player can have
 };
 
+// Import configuration constants
+import {
+    POWER_UP_INTERVAL, POWER_UP_GLOW_RADIUS, MAX_POWER_UP_FRUITS, POWER_UP_LIFETIME, MIN_POWER_UP_DISTANCE,
+    LEVERAGE_FRUIT_INTERVAL, MAX_LEVERAGE_FRUITS, LEVERAGE_FRUIT_LIFETIME, LEVERAGE_DOUBLE_EAT_WINDOW, LEVERAGE_EFFECT_DURATION,
+    SPEEDRUN_FRUIT_INTERVAL, MAX_SPEEDRUN_FRUITS, SPEEDRUN_FRUIT_LIFETIME, SPEEDRUN_DOUBLE_EAT_WINDOW, SPEEDRUN_EFFECT_DURATION,
+    DIFFICULTY_CHECK_INTERVAL, EDIBLE_THRESHOLD, ALLIANCE_THRESHOLD,
+    MAX_PLANTS, REMOVE_BATCH_SIZE, INITIAL_BORDER_TREES, MAX_BORDER_TREES, MASSIVE_TRANSACTION_THRESHOLD, GARDEN_RADIUS,
+    STABLECOIN_COLORS
+} from './js/config.js';
+
 // Power-up fruit system
 let powerUpFruits = []; // Special glowing fruits that give lives
 let lastPowerUpTime = 0;
-const POWER_UP_INTERVAL = 120000; // 2 minutes in milliseconds
-const POWER_UP_GLOW_RADIUS = 15; // Distance at which fruits start glowing
-const MAX_POWER_UP_FRUITS = 5; // Maximum life fruits at any time
-const POWER_UP_LIFETIME = 30000; // 30 seconds in milliseconds
-const MIN_POWER_UP_DISTANCE = 20; // Minimum distance between life fruits
 
 // Leverage fruit system
 let leverageFruits = []; // Special fruits that double player size
@@ -58,11 +63,6 @@ let naturalPlayerSize = 1.0; // Track player's natural size without leverage eff
 let currentLeverageMultiplier = 1.0; // Current leverage multiplier (1.0 = no effect)
 let leverageActive = false; // Whether leverage effect is active
 let leverageEffectTimer = null; // Timer to reset player size
-const LEVERAGE_FRUIT_INTERVAL = 90000; // 1.5 minutes in milliseconds
-const MAX_LEVERAGE_FRUITS = 2; // Maximum leverage fruits at any time
-const LEVERAGE_FRUIT_LIFETIME = 45000; // 45 seconds in milliseconds
-const LEVERAGE_DOUBLE_EAT_WINDOW = 5000; // 5 seconds to double eat for 4x effect
-const LEVERAGE_EFFECT_DURATION = 15000; // 15 seconds of size effect
 
 // Speedrun fruit system
 let speedrunFruits = []; // Special fruits that double player speed
@@ -72,35 +72,12 @@ let speedrunEaten = 0; // Count of speedrun fruits eaten in double-eat window
 let originalPlayerSpeed = 10; // Store original player speed for resetting
 let speedrunActive = false; // Whether speedrun effect is active
 let speedrunEffectTimer = null; // Timer to reset player speed
-const SPEEDRUN_FRUIT_INTERVAL = 75000; // 1.25 minutes in milliseconds
-const MAX_SPEEDRUN_FRUITS = 2; // Maximum speedrun fruits at any time
-const SPEEDRUN_FRUIT_LIFETIME = 40000; // 40 seconds in milliseconds
-const SPEEDRUN_DOUBLE_EAT_WINDOW = 5000; // 5 seconds to double eat for 4x effect
-const SPEEDRUN_EFFECT_DURATION = 12000; // 12 seconds of speed effect
 
 // Difficulty scaling system
 let difficultyLevel = 'normal'; // 'normal', 'survival', or 'alliance'
 let lastDifficultyCheck = 0;
-const DIFFICULTY_CHECK_INTERVAL = 5000; // Check every 5 seconds
-const EDIBLE_THRESHOLD = 0.5; // 50% of animals must be edible to trigger survival mode
-const ALLIANCE_THRESHOLD = 0.9; // 90% of animals must be smaller to trigger alliance mode
 let allianceActive = false; // Track if animals are actively teaming up
 let lastAllianceCheck = 0;
-
-// Configuration
-const MAX_PLANTS = 10000; // Maximum number of plants in the garden
-const REMOVE_BATCH_SIZE = 100; // Number of oldest plants to remove when cap is reached
-const INITIAL_BORDER_TREES = 50; // Initial trees on the border
-const MAX_BORDER_TREES = 100; // Maximum border trees
-const MASSIVE_TRANSACTION_THRESHOLD = 10000; // $10k threshold for new trees
-const GARDEN_RADIUS = 80; // Radius for border tree placement
-
-// Stablecoin colors - nature-inspired, vibrant colors
-const STABLECOIN_COLORS = {
-    USDC: 0x4A90E2,  // Sky blue - like morning sky
-    USDT: 0x50C878,  // Emerald green - like fresh leaves
-    DAI: 0xFFD700   // Golden yellow - like sunflowers
-};
 
 // Statistics
 const stats = {
