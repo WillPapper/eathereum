@@ -534,7 +534,7 @@ class TransactionAnimal {
         // AI State properties for survival mode
         this.aiState = 'roaming'; // 'roaming', 'hunting', 'eating', 'growing'
         this.targetAnimal = null; // Target animal for hunting
-        this.huntingCooldown = 0; // Cooldown between hunts
+        this.huntingCooldown = Date.now(); // Timestamp for hunting cooldown
         this.originalSize = this.size; // Store original size for growth tracking
         this.growthFromEating = 0; // How much size gained from eating other animals
         
@@ -735,83 +735,28 @@ class TransactionAnimal {
         // Update threat indicator based on player size
         this.updateThreatIndicator();
         
-        // Check distance to player for behavior (much less reactive)
-        if (playerControls.mesh) {
-            const distanceToPlayer = playerControls.mesh.position.distanceTo(this.mesh.position);
+        // Update AI behavior based on difficulty level (handles player interaction and survival mode)
+        this.updateAIBehavior();
+        
+        // Basic movement behavior - tree avoidance and wandering
+        const avoidanceDirection = this.getTreeAvoidanceDirection();
+        if (avoidanceDirection !== null) {
+            const directionDiff = avoidanceDirection - this.targetDirection;
+            let normalizedDiff = directionDiff;
+            while (normalizedDiff > Math.PI) normalizedDiff -= Math.PI * 2;
+            while (normalizedDiff < -Math.PI) normalizedDiff += Math.PI * 2;
             
-            // Only react to player if VERY close AND only sometimes
-            if (playerControls.isPlaying && distanceToPlayer < this.fleeRadius && Math.random() < 0.3) {
-                if (this.size < playerControls.size * 0.7) {
-                    // Only much smaller animals flee, and only sometimes
-                    const fleeDirection = new THREE.Vector3();
-                    fleeDirection.subVectors(this.mesh.position, playerControls.mesh.position);
-                    fleeDirection.y = 0;
-                    fleeDirection.normalize();
-                    
-                    // Blend flee direction with current direction (don't change abruptly)
-                    const fleeAngle = Math.atan2(fleeDirection.x, fleeDirection.z);
-                    const directionDiff = fleeAngle - this.targetDirection;
-                    let normalizedDiff = directionDiff;
-                    while (normalizedDiff > Math.PI) normalizedDiff -= Math.PI * 2;
-                    while (normalizedDiff < -Math.PI) normalizedDiff += Math.PI * 2;
-                    
-                    this.targetDirection += normalizedDiff * 0.2; // Gradual steering away
-                    this.speed = Math.min(this.speed * 1.3, 2); // Slightly faster but not panic
-                    
-                } else if (this.size > playerControls.size * 1.5) {
-                    // Only much larger animals chase, and only rarely
-                    if (Math.random() < 0.1) { // 10% chance to chase
-                        const chaseDirection = new THREE.Vector3();
-                        chaseDirection.subVectors(playerControls.mesh.position, this.mesh.position);
-                        chaseDirection.y = 0;
-                        chaseDirection.normalize();
-                        
-                        // Blend chase direction with current direction
-                        const chaseAngle = Math.atan2(chaseDirection.x, chaseDirection.z);
-                        const directionDiff = chaseAngle - this.targetDirection;
-                        let normalizedDiff = directionDiff;
-                        while (normalizedDiff > Math.PI) normalizedDiff -= Math.PI * 2;
-                        while (normalizedDiff < -Math.PI) normalizedDiff += Math.PI * 2;
-                        
-                        this.targetDirection += normalizedDiff * 0.15; // Gradual steering toward
-                        this.speed = Math.min(this.speed * 1.2, 2.5); // Slightly faster
-                    }
-                }
-            }
-            
-            // Always check for tree avoidance
-            const avoidanceDirection = this.getTreeAvoidanceDirection();
-            if (avoidanceDirection !== null) {
-                const directionDiff = avoidanceDirection - this.targetDirection;
-                let normalizedDiff = directionDiff;
-                while (normalizedDiff > Math.PI) normalizedDiff -= Math.PI * 2;
-                while (normalizedDiff < -Math.PI) normalizedDiff += Math.PI * 2;
-                
-                this.targetDirection += normalizedDiff * 0.15;
-            }
-            
-            // Always add some random wandering (main behavior)
+            this.targetDirection += normalizedDiff * 0.15;
+        }
+        
+        // Random wandering behavior when not actively hunting or fleeing
+        if (this.aiState === 'roaming' || this.aiState === 'growing') {
             this.targetDirection += (Math.random() - 0.5) * this.turnSpeed;
             
-            // Maintain natural wandering speed
-            if (!this.reacting) {
+            // Maintain natural wandering speed (unless hunting)
+            if (this.aiState !== 'hunting') {
                 this.speed = 0.5 + Math.random() * 1;
             }
-            
-        } else {
-            // No player - just natural behavior
-            const avoidanceDirection = this.getTreeAvoidanceDirection();
-            if (avoidanceDirection !== null) {
-                const directionDiff = avoidanceDirection - this.targetDirection;
-                let normalizedDiff = directionDiff;
-                while (normalizedDiff > Math.PI) normalizedDiff -= Math.PI * 2;
-                while (normalizedDiff < -Math.PI) normalizedDiff += Math.PI * 2;
-                
-                this.targetDirection += normalizedDiff * 0.1;
-            } else {
-                this.targetDirection += (Math.random() - 0.5) * this.turnSpeed;
-            }
-            this.speed = 0.5 + Math.random() * 1;
         }
         
         // Apply movement
@@ -876,8 +821,8 @@ class TransactionAnimal {
             this.aura.material.opacity = 0.2 + Math.sin(Date.now() * 0.003) * 0.1;
         }
         
-        // Update AI behavior based on difficulty level
-        this.updateAIBehavior();
+        // Update cooldowns
+        if (this.jumpCooldown > 0) this.jumpCooldown--;
         
         this.age++;
         return this.isAlive;
@@ -939,10 +884,12 @@ class TransactionAnimal {
     
     // Handle survival mode behavior (animal vs animal)
     handleSurvivalMode() {
+        const currentTime = Date.now();
+        
         switch (this.aiState) {
             case 'roaming':
-                // Look for smaller animals to hunt
-                if (this.huntingCooldown <= 0 && Math.random() < 0.02) { // 2% chance per frame to start hunting
+                // Look for smaller animals to hunt - use time-based cooldown
+                if (currentTime - this.huntingCooldown > 5000 && Math.random() < 0.05) { // 5% chance per frame, 5s cooldown
                     this.findTargetToHunt();
                 }
                 break;
@@ -954,6 +901,7 @@ class TransactionAnimal {
                     // Target lost, return to roaming
                     this.aiState = 'roaming';
                     this.targetAnimal = null;
+                    this.huntingCooldown = currentTime; // Set cooldown timestamp
                 }
                 break;
                 
@@ -990,6 +938,7 @@ class TransactionAnimal {
             this.targetAnimal = bestTarget;
             this.aiState = 'hunting';
             this.speed *= 1.5; // Speed boost while hunting
+            console.log(`🎯 ${this.animalType} started hunting ${bestTarget.animalType} (distance: ${bestDistance.toFixed(1)})`);
         }
     }
     
@@ -1025,7 +974,7 @@ class TransactionAnimal {
             if (distance > 35) {
                 this.aiState = 'roaming';
                 this.targetAnimal = null;
-                this.huntingCooldown = 5000; // 5 second cooldown before hunting again
+                this.huntingCooldown = Date.now(); // Set timestamp cooldown
                 this.speed /= 1.5; // Return to normal speed
             }
         }
@@ -3145,12 +3094,15 @@ function checkDifficultyScaling() {
         console.log(`🔥 SURVIVAL MODE ACTIVATED! ${(edibleRatio * 100).toFixed(1)}% of animals are now edible. Animals will start eating each other to grow!`);
         
         // Initialize hunting behavior for some animals
+        let huntersCreated = 0;
         animals.forEach(animal => {
             if (Math.random() < 0.3) { // 30% chance to become hunters initially
                 animal.aiState = 'hunting';
-                animal.huntingCooldown = Math.random() * 2000; // Random start delay
+                animal.huntingCooldown = Date.now() - 1000; // Allow immediate hunting
+                huntersCreated++;
             }
         });
+        console.log(`👹 ${huntersCreated} animals became hunters!`);
     }
     // Switch back to normal if threats return (though this is less likely)
     else if (edibleRatio < EDIBLE_THRESHOLD * 0.7 && difficultyLevel === 'survival') {
@@ -3198,8 +3150,8 @@ function animalEatAnimal(predator, prey) {
     // Return to hunting after a brief pause
     setTimeout(() => {
         if (predator.isAlive && difficultyLevel === 'survival') {
-            predator.aiState = 'hunting';
-            predator.huntingCooldown = 3000 + Math.random() * 2000; // 3-5 second cooldown
+            predator.aiState = 'roaming';
+            predator.huntingCooldown = Date.now() + 3000 + Math.random() * 2000; // 3-5 second cooldown
         }
     }, 1000);
     
