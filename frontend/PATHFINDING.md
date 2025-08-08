@@ -30,24 +30,24 @@ Animals larger than the player will:
 ### 4. Speed System
 
 #### Base Speeds
-- **Player**: 10 units/second (base, can be boosted)
-- **Small Animals (Rabbits)**: 0.6-2.4 units/second base
-- **Medium Animals (Foxes)**: 0.5-2.0 units/second base
-- **Large Animals (Deer)**: 0.45-1.8 units/second base
-- **Giant Animals (Bears)**: 0.3-1.2 units/second base
+- **Player**: 20 units/second (doubled for better gameplay)
+- **Small Animals (Rabbits)**: 0.24-0.84 units/second base
+- **Medium Animals (Foxes)**: 0.2-0.7 units/second base
+- **Large Animals (Deer)**: 0.18-0.63 units/second base
+- **Giant Animals (Bears)**: 0.12-0.42 units/second base
 
 #### Fixed Chase/Flee Speeds (NOT affected by player speed boosts)
 - **Rabbits**: 
-  - Chase: N/A (too small to chase)
-  - Flee: 1.3x their base speed (slight speed boost)
+  - Chase: 1.0 units/second (won't really chase)
+  - Flee: 1.4x their base speed (moderate boost)
 - **Foxes**:
-  - Chase: 3.5 units/second (35% of base player speed - stalking)
-  - Flee: 1.2x their base speed
+  - Chase: 3.0 units/second (15% of player speed - slow stalking)
+  - Flee: 1.3x their base speed
 - **Deer**:
-  - Chase: 4.0 units/second (40% of base player speed - persistent)
-  - Flee: 1.15x their base speed
+  - Chase: 4.0 units/second (20% of player speed - persistent)
+  - Flee: 1.25x their base speed
 - **Bears**:
-  - Chase: 3.0 units/second (30% of base player speed - slow menace)
+  - Chase: 2.5 units/second (12.5% of player speed - very slow menace)
   - Flee: 1.1x their base speed (barely flee)
 
 #### The Thrill of the Chase

@@ -23,7 +23,7 @@ let playerControls = {
     isPlaying: false,
     size: 1.0,  // Player's current size
     mesh: null,  // Player's 3D model
-    speed: 10   // Base movement speed
+    speed: 20   // Base movement speed - doubled for better gameplay
 };
 
 // Game state
@@ -526,7 +526,7 @@ class TransactionAnimal {
         // Movement properties
         this.velocity = new THREE.Vector3();
         this.targetDirection = Math.random() * Math.PI * 2;
-        this.baseSpeed = 0.5 + Math.random() * 1.5; // Base speed for wandering
+        this.baseSpeed = 0.2 + Math.random() * 0.5; // Much slower base speed (was 0.5-2, now 0.2-0.7)
         this.speed = this.baseSpeed;
         this.turnSpeed = 0.02 + Math.random() * 0.02; // Slower turning
         this.jumpCooldown = 0;
@@ -554,27 +554,27 @@ class TransactionAnimal {
             this.animalType = 'rabbit';
             this.baseSpeed *= 1.2; // Rabbits are slightly faster
             this.speed = this.baseSpeed;
-            this.chaseSpeed = 2.0; // Won't chase (too small)
-            this.fleeSpeed = this.baseSpeed * 1.3; // Slightly faster when fleeing
+            this.chaseSpeed = 1.0; // Won't really chase (too small)
+            this.fleeSpeed = this.baseSpeed * 1.4; // Moderate speed boost when fleeing
         } else if (this.amount < 1000) {
             this.createMediumAnimal(); // Fox
             this.animalType = 'fox';
             this.speed = this.baseSpeed; // Initialize current speed
-            this.chaseSpeed = 3.5; // 35% of base player speed - slow stalking
-            this.fleeSpeed = this.baseSpeed * 1.2; // Slightly faster fleeing
+            this.chaseSpeed = 3.0; // Slow stalking (15% of new player speed)
+            this.fleeSpeed = this.baseSpeed * 1.3; // Moderate fleeing boost
         } else if (this.amount < 10000) {
             this.createLargeAnimal(); // Deer
             this.animalType = 'deer';
             this.baseSpeed *= 0.9; // Deer are slightly slower
             this.speed = this.baseSpeed;
-            this.chaseSpeed = 4.0; // 40% of base player speed - persistent pursuit
-            this.fleeSpeed = this.baseSpeed * 1.15; // Just a bit faster when fleeing
+            this.chaseSpeed = 4.0; // Persistent pursuit (20% of new player speed)
+            this.fleeSpeed = this.baseSpeed * 1.25; // Small flee boost
         } else {
             this.createGiantAnimal(); // Bear (whale transaction)
             this.animalType = 'bear';
             this.baseSpeed *= 0.6; // Bears are slower but valuable
             this.speed = this.baseSpeed;
-            this.chaseSpeed = 3.0; // 30% of base player speed - slow but menacing
+            this.chaseSpeed = 2.5; // Very slow menacing walk (12.5% of new player speed)
             this.fleeSpeed = this.baseSpeed * 1.1; // Bears barely speed up when fleeing
         }
         
@@ -1034,7 +1034,7 @@ class TransactionAnimal {
         if (bestTarget) {
             this.targetAnimal = bestTarget;
             this.aiState = 'hunting';
-            this.speed = this.baseSpeed * 1.5; // Speed boost while hunting
+            this.speed = this.baseSpeed * 1.3; // Small speed boost while hunting
             console.log(`🎯 ${this.animalType} started hunting ${bestTarget.animalType} (distance: ${bestDistance.toFixed(1)})`);
         }
     }
@@ -3108,11 +3108,11 @@ function collectSpeedrunFruit(fruit, index) {
     
     // Store original speed if this is the first speedrun effect
     if (!speedrunActive) {
-        originalPlayerSpeed = playerControls.speed;
+        originalPlayerSpeed = 20; // Base speed is now 20
     }
     
     // Apply speed multiplier
-    playerControls.speed = originalPlayerSpeed * speedMultiplier;
+    playerControls.speed = 20 * speedMultiplier; // Always multiply from base speed
     
     // Set speedrun state
     speedrunActive = true;
@@ -3146,7 +3146,7 @@ function collectSpeedrunFruit(fruit, index) {
 // Reset speedrun effect back to normal speed
 function resetSpeedrunEffect() {
     if (speedrunActive) {
-        playerControls.speed = originalPlayerSpeed;
+        playerControls.speed = 20; // Reset to base speed
         
         speedrunActive = false;
         speedrunEaten = 0;
