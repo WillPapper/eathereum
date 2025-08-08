@@ -6,6 +6,9 @@ let isPaused = false;
 let gameOver = false;
 let moneyCollected = 0;
 
+// Mobile control settings (can be overridden via URL params)
+let forceOmnidirectional = null; // null = auto-detect, true = force on, false = force off
+
 // Player controls (ground-based animal)
 let playerControls = {
     moveForward: false,
@@ -1717,12 +1720,35 @@ function updatePlayerMovement(delta) {
     // Apply movement
     const moveVector = new THREE.Vector3();
     
-    if (playerControls.moveForward) moveVector.add(forward);
-    if (playerControls.moveBackward) moveVector.sub(forward);
-    if (playerControls.moveLeft) moveVector.sub(right);
-    if (playerControls.moveRight) moveVector.add(right);
+    // Check if we're using mobile omnidirectional movement
+    const isMobile = playerControls.mobileMovement && playerControls.mobileMovement.active;
     
-    // Handle rotation with Q and E keys
+    if (isMobile) {
+        // Mobile: Use omnidirectional movement based on touch angle and magnitude
+        const angle = playerControls.mobileMovement.angle;
+        const magnitude = playerControls.mobileMovement.magnitude;
+        
+        if (magnitude > 0) {
+            // Calculate movement direction from touch input
+            // angle: 0 = right, PI/2 = up, PI = left, -PI/2 = down
+            const touchX = Math.cos(angle) * magnitude;
+            const touchY = Math.sin(angle) * magnitude;
+            
+            // Map touch input to world movement relative to camera
+            // touchX positive = drag right = move right
+            // touchY positive = drag up = move forward
+            moveVector.add(right.clone().multiplyScalar(touchX));
+            moveVector.add(forward.clone().multiplyScalar(touchY));
+        }
+    } else {
+        // Desktop: Use traditional 4-direction keyboard/touch movement
+        if (playerControls.moveForward) moveVector.add(forward);
+        if (playerControls.moveBackward) moveVector.sub(forward);
+        if (playerControls.moveLeft) moveVector.sub(right);
+        if (playerControls.moveRight) moveVector.add(right);
+    }
+    
+    // Handle rotation with Q and E keys (desktop only)
     if (playerControls.rotateLeft) {
         playerControls.rotation -= playerControls.rotationSpeed;
     }
@@ -1734,7 +1760,7 @@ function updatePlayerMovement(delta) {
         moveVector.normalize();
         moveVector.multiplyScalar(speed * delta);
         
-        // Apply boost if shift is held
+        // Apply boost if shift is held (desktop only)
         if (playerControls.boost) {
             moveVector.multiplyScalar(2);
         }
@@ -2887,95 +2913,128 @@ function findOptimalLeverageFruitSpawnPosition() {
     return null;
 }
 
-// Show leverage fruit notification
-function showLeverageFruitNotification() {
+// Global notification management
+let activeNotifications = [];
+let notificationOffset = 0;
+
+// Unified fruit notification system
+function showFruitNotification(config) {
+    const isMobile = window.innerWidth <= 768;
+    
     const notification = document.createElement('div');
+    notification.className = 'fruit-notification';
+    
+    // Calculate position based on existing notifications
+    const baseTop = 0; // Start at the very top
+    const spacing = isMobile ? 45 : 40; // Thin bar spacing
+    const currentTop = baseTop + (activeNotifications.length * spacing);
+    
     notification.style.cssText = `
         position: fixed;
-        top: 20px;
-        left: 20px;
-        background: linear-gradient(135deg, #FFD700, #FF8C00);
-        color: black;
-        padding: 15px 25px;
-        border-radius: 10px;
-        font-size: 16px;
-        font-weight: bold;
+        top: ${currentTop}px;
+        left: 0;
+        right: 0;
+        width: 100%;
+        background: ${config.gradient};
+        color: ${config.textColor};
+        padding: ${isMobile ? '8px 15px' : '10px 20px'};
+        font-size: ${isMobile ? '13px' : '14px'};
+        font-weight: 600;
         z-index: 1000;
-        animation: slideInLeft 0.5s ease-out;
-        box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4);
-        border: 2px solid #FF8C00;
+        animation: slideDown 0.3s ease-out;
+        box-shadow: 0 2px 10px ${config.shadowColor};
+        border-bottom: 2px solid ${config.borderColor};
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     `;
-    notification.textContent = '⚡ Leverage Fruit Spawned! Double your size!';
+    notification.textContent = config.text;
     
-    // Add CSS animation
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes slideInLeft {
-            from { transform: translateX(-100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-    `;
-    document.head.appendChild(style);
+    // Add CSS animation if not already present
+    if (!document.getElementById('fruit-notification-styles')) {
+        const style = document.createElement('style');
+        style.id = 'fruit-notification-styles';
+        style.textContent = `
+            @keyframes slideDown {
+                from { 
+                    transform: translateY(-100%); 
+                    opacity: 0; 
+                }
+                to { 
+                    transform: translateY(0); 
+                    opacity: 1; 
+                }
+            }
+            @keyframes slideUp {
+                from { 
+                    transform: translateY(0); 
+                    opacity: 1; 
+                }
+                to { 
+                    transform: translateY(-100%); 
+                    opacity: 0; 
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
     
     document.body.appendChild(notification);
+    activeNotifications.push(notification);
     
-    // Remove notification after 4 seconds
+    // Remove notification after 3 seconds (reduced from 4)
     setTimeout(() => {
         if (notification.parentNode) {
-            notification.style.animation = 'slideInLeft 0.5s ease-in reverse';
+            notification.style.animation = 'slideUp 0.3s ease-in';
             setTimeout(() => {
                 if (notification.parentNode) {
                     document.body.removeChild(notification);
+                    // Remove from active notifications and reposition others
+                    const index = activeNotifications.indexOf(notification);
+                    if (index > -1) {
+                        activeNotifications.splice(index, 1);
+                        repositionNotifications();
+                    }
                 }
-                if (style.parentNode) {
-                    document.head.removeChild(style);
-                }
-            }, 500);
+            }, 300);
         }
-    }, 4000);
+    }, 3000);
+}
+
+// Reposition remaining notifications after one is removed
+function repositionNotifications() {
+    const isMobile = window.innerWidth <= 768;
+    const baseTop = 0;
+    const spacing = isMobile ? 45 : 40;
+    
+    activeNotifications.forEach((notification, index) => {
+        const newTop = baseTop + (index * spacing);
+        notification.style.transition = 'top 0.3s ease-out';
+        notification.style.top = `${newTop}px`;
+    });
+}
+
+// Show leverage fruit notification
+function showLeverageFruitNotification() {
+    showFruitNotification({
+        text: '⚡ Leverage Fruit Spawned! Double your size!',
+        gradient: 'linear-gradient(135deg, #FFD700, #FF8C00)',
+        borderColor: '#FF8C00',
+        shadowColor: 'rgba(255, 215, 0, 0.4)',
+        textColor: 'black'
+    });
 }
 
 // Show power-up notification
 function showPowerUpNotification() {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, #FF69B4, #FF1493);
-        color: white;
-        padding: 15px 25px;
-        border-radius: 10px;
-        font-size: 16px;
-        font-weight: bold;
-        z-index: 1000;
-        animation: slideIn 0.5s ease-out;
-        box-shadow: 0 5px 20px rgba(255, 105, 180, 0.4);
-    `;
-    notification.textContent = '💖 Life Fruit Spawned! Find the glowing fruit!';
-    
-    // Add CSS animation
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-    `;
-    document.head.appendChild(style);
-    
-    document.body.appendChild(notification);
-    
-    // Remove notification after 4 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.style.animation = 'slideIn 0.5s ease-in reverse';
-            setTimeout(() => {
-                document.body.removeChild(notification);
-                document.head.removeChild(style);
-            }, 500);
-        }
-    }, 4000);
+    showFruitNotification({
+        text: '💖 Life Fruit Spawned! Find the glowing fruit!',
+        gradient: 'linear-gradient(135deg, #FF69B4, #FF1493)',
+        borderColor: '#FF1493',
+        shadowColor: 'rgba(255, 105, 180, 0.4)',
+        textColor: 'white'
+    });
 }
 
 // Create a speedrun fruit (speed doubling fruit)
@@ -3116,50 +3175,13 @@ function findOptimalSpeedrunFruitSpawnPosition() {
 
 // Show speedrun fruit notification
 function showSpeedrunFruitNotification() {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 80px;
-        left: 20px;
-        background: linear-gradient(135deg, #00FFFF, #0088FF);
-        color: black;
-        padding: 15px 25px;
-        border-radius: 10px;
-        font-size: 16px;
-        font-weight: bold;
-        z-index: 1000;
-        animation: slideInLeft 0.5s ease-out;
-        box-shadow: 0 5px 20px rgba(0, 255, 255, 0.4);
-        border: 2px solid #0088FF;
-    `;
-    notification.textContent = '⚡ Speedrun Fruit Spawned! Double your speed!';
-    
-    // Add CSS animation
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes slideInLeft {
-            from { transform: translateX(-100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-    `;
-    document.head.appendChild(style);
-    
-    document.body.appendChild(notification);
-    
-    // Remove notification after 4 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.style.animation = 'slideInLeft 0.5s ease-in reverse';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    document.body.removeChild(notification);
-                }
-                if (style.parentNode) {
-                    document.head.removeChild(style);
-                }
-            }, 500);
-        }
-    }, 4000);
+    showFruitNotification({
+        text: '💨 Speedrun Fruit Spawned! Double your speed!',
+        gradient: 'linear-gradient(135deg, #00FFFF, #0088FF)',
+        borderColor: '#0088FF',
+        shadowColor: 'rgba(0, 255, 255, 0.4)',
+        textColor: 'black'
+    });
 }
 
 // Update speedrun fruits (physics, expiration, collection)
@@ -4813,50 +4835,83 @@ function showGameOverScreen(reason) {
     // Death message - always from larger animal now
     const deathMessage = 'You were eaten by a larger animal!';
     
+    const isMobile = window.innerWidth <= 768;
+    
     gameOverDiv.innerHTML = `
         <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
                     background: linear-gradient(135deg, rgba(255, 0, 0, 0.9), rgba(139, 0, 0, 0.9)); 
-                    color: white; padding: 40px; border-radius: 20px; text-align: center; 
-                    z-index: 2000; box-shadow: 0 10px 40px rgba(0,0,0,0.8); min-width: 400px;">
-            <h1 style="margin: 0 0 20px 0; font-size: 48px;">💀 GAME OVER 💀</h1>
-            <p style="font-size: 24px; margin: 10px 0;">${deathMessage}</p>
+                    color: white; padding: ${isMobile ? '30px 20px' : '40px'}; border-radius: 20px; text-align: center; 
+                    z-index: 2000; box-shadow: 0 10px 40px rgba(0,0,0,0.8); 
+                    min-width: ${isMobile ? '90%' : '400px'}; max-width: ${isMobile ? '95%' : 'none'};">
+            <h1 style="margin: 0 0 20px 0; font-size: ${isMobile ? '36px' : '48px'};">💀 GAME OVER 💀</h1>
+            <p style="font-size: ${isMobile ? '20px' : '24px'}; margin: 10px 0;">${deathMessage}</p>
             <div style="margin: 30px 0;">
-                <p style="font-size: 20px; margin: 10px 0;">Final Score: <span style="color: #FFD700; font-size: 32px; font-weight: bold;">$${gameState.currentScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
-                <p style="font-size: 16px; margin: 10px 0;">High Score: <span style="color: #FFD700;">$${gameState.highScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
-                ${gameState.startTime ? `<p style="font-size: 14px; margin: 10px 0;">Survived: ${Math.floor((gameState.endTime - gameState.startTime) / 1000)} seconds</p>` : ''}
+                <p style="font-size: ${isMobile ? '18px' : '20px'}; margin: 10px 0;">Final Score: <span style="color: #FFD700; font-size: ${isMobile ? '28px' : '32px'}; font-weight: bold;">$${gameState.currentScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+                <p style="font-size: ${isMobile ? '14px' : '16px'}; margin: 10px 0;">High Score: <span style="color: #FFD700;">$${gameState.highScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+                ${gameState.startTime ? `<p style="font-size: ${isMobile ? '12px' : '14px'}; margin: 10px 0;">Survived: ${Math.floor((gameState.endTime - gameState.startTime) / 1000)} seconds</p>` : ''}
             </div>
             <div style="margin-top: 30px;">
-                <button onclick="restartGame()" style="
+                <button id="try-again-btn" style="
                     background: linear-gradient(135deg, #43e97b, #38f9d7);
-                    color: white; border: none; padding: 15px 30px; border-radius: 10px;
-                    font-size: 18px; font-weight: bold; cursor: pointer; margin: 0 10px;
-                    transition: transform 0.2s;">
+                    color: white; border: none; padding: ${isMobile ? '20px 40px' : '15px 30px'}; border-radius: 10px;
+                    font-size: ${isMobile ? '20px' : '18px'}; font-weight: bold; cursor: pointer;
+                    transition: transform 0.2s; touch-action: manipulation;
+                    -webkit-tap-highlight-color: transparent;">
                     🔄 Try Again
                 </button>
-                <button onclick="exitToGarden()" style="
-                    background: linear-gradient(135deg, #667eea, #764ba2);
-                    color: white; border: none; padding: 15px 30px; border-radius: 10px;
-                    font-size: 18px; font-weight: bold; cursor: pointer; margin: 0 10px;
-                    transition: transform 0.2s;">
-                    🏡 Exit to Garden
-                </button>
             </div>
-            <p style="margin-top: 20px; font-size: 14px; color: #FFD700;">Press any key or click to try again</p>
+            <p style="margin-top: 20px; font-size: ${isMobile ? '12px' : '14px'}; color: #FFD700;">Tap anywhere or press any key to try again</p>
         </div>
     `;
     document.body.appendChild(gameOverDiv);
     
+    // Add button event listeners after DOM is created
+    const tryAgainBtn = document.getElementById('try-again-btn');
+    
+    if (tryAgainBtn) {
+        // Use both click and touchend for better mobile support
+        const handleTryAgain = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('Try Again button activated');
+            
+            // Prevent double-tap
+            tryAgainBtn.disabled = true;
+            
+            // Small delay to ensure clean restart
+            setTimeout(() => {
+                restartGame();
+            }, 100);
+        };
+        
+        tryAgainBtn.addEventListener('click', handleTryAgain);
+        tryAgainBtn.addEventListener('touchend', handleTryAgain);
+        
+        // Add hover effect for desktop
+        if (!isMobile) {
+            tryAgainBtn.addEventListener('mouseenter', () => {
+                tryAgainBtn.style.transform = 'scale(1.05)';
+            });
+            tryAgainBtn.addEventListener('mouseleave', () => {
+                tryAgainBtn.style.transform = 'scale(1)';
+            });
+        }
+    }
+    
     // Store the listener function globally so we can remove it later
     window.gameOverRestartListener = (event) => {
-        // Stop event propagation
-        event.stopPropagation();
-        
         // Don't restart on Escape key
         if (event.type === 'keydown' && event.code === 'Escape') {
             return;
         }
-        // Don't restart if clicking a button (let button handlers work)
-        if (event.type === 'click' && (event.target.tagName === 'BUTTON' || event.target.closest('button'))) {
+        
+        // Don't restart if clicking/touching a button (let button handlers work)
+        if (event.target && (event.target.tagName === 'BUTTON' || event.target.closest('button'))) {
+            return;
+        }
+        
+        // Don't restart on touchend events (handled by button)
+        if (event.type === 'touchend') {
             return;
         }
         
@@ -4865,6 +4920,7 @@ function showGameOverScreen(reason) {
         // Remove listeners first
         document.removeEventListener('keydown', window.gameOverRestartListener, true);
         document.removeEventListener('click', window.gameOverRestartListener, true);
+        document.removeEventListener('touchstart', window.gameOverRestartListener, true);
         window.removeEventListener('keydown', window.gameOverRestartListener, true);
         window.removeEventListener('click', window.gameOverRestartListener, true);
         
@@ -4872,17 +4928,18 @@ function showGameOverScreen(reason) {
         delete window.gameOverRestartListener;
         
         // Restart the game
-        window.restartGame();
+        restartGame();
     };
     
     // Add listeners after a short delay to avoid accidental restarts
-    // Use capture phase to ensure we get the events first
     setTimeout(() => {
         console.log('Adding game over interaction listeners');
+        // Always add keyboard listener
         document.addEventListener('keydown', window.gameOverRestartListener, true);
-        document.addEventListener('click', window.gameOverRestartListener, true);
-        window.addEventListener('keydown', window.gameOverRestartListener, true);
-        window.addEventListener('click', window.gameOverRestartListener, true);
+        
+        // Add click listener for tap-anywhere functionality
+        // But use a passive listener that won't interfere with button taps
+        document.addEventListener('click', window.gameOverRestartListener, false);
     }, 750);
     
     // Make plants glow red to show danger
@@ -4914,7 +4971,10 @@ function showGameOverScreen(reason) {
 
 // Restart the game
 function restartGame() {
-    // Simply reload the page for now
+    console.log('Restarting game...');
+    
+    // Simply reload the page for a clean restart
+    // This is more reliable than trying to reset all state
     location.reload();
 }
 
@@ -5199,10 +5259,58 @@ function setupPlayerControls() {
     let touchStartX = 0;
     let touchStartY = 0;
     
+    // Check URL params for manual override
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('omnidirectional')) {
+        forceOmnidirectional = urlParams.get('omnidirectional') === 'true';
+    }
+    
+    // Use Bowser library for reliable mobile detection
+    const browser = window.bowser.getParser(window.navigator.userAgent);
+    const isMobile = (() => {
+        // Check for manual override first
+        if (forceOmnidirectional !== null) {
+            return forceOmnidirectional;
+        }
+        
+        // Use Bowser's built-in mobile detection
+        const platformType = browser.getPlatformType();
+        const isMobilePlatform = platformType === 'mobile' || platformType === 'tablet';
+        
+        // Double-check with Bowser's detailed detection
+        const parsedResult = browser.getResult();
+        const isMobileOS = parsedResult.os.name === 'iOS' || 
+                          parsedResult.os.name === 'Android' ||
+                          parsedResult.platform.type === 'mobile' ||
+                          parsedResult.platform.type === 'tablet';
+        
+        return isMobilePlatform || isMobileOS;
+    })();
+    
+    // Add mobile-specific movement state
+    if (isMobile) {
+        playerControls.mobileMovement = {
+            active: false,
+            angle: 0,
+            magnitude: 0
+        };
+        
+        // Log detection result for debugging
+        const deviceInfo = browser.getResult();
+        console.log(`Mobile device detected: ${deviceInfo.platform.vendor} ${deviceInfo.os.name} - enabling omnidirectional movement`);
+    } else {
+        const deviceInfo = browser.getResult();
+        console.log(`Desktop device detected: ${deviceInfo.platform.type} - using 4-direction movement`);
+    }
+    
     canvas.addEventListener('touchstart', (event) => {
         if (playerControls.isPlaying) {
             touchStartX = event.touches[0].clientX;
             touchStartY = event.touches[0].clientY;
+            
+            if (isMobile) {
+                playerControls.mobileMovement.active = true;
+            }
         }
     });
     
@@ -5215,24 +5323,41 @@ function setupPlayerControls() {
             const deltaX = touchX - touchStartX;
             const deltaY = touchY - touchStartY;
             
-            // Map touch to movement keys
-            if (Math.abs(deltaX) > Math.abs(deltaY)) {
-                // Horizontal movement
-                if (deltaX > 20) {
-                    playerControls.moveRight = true;
-                    playerControls.moveLeft = false;
-                } else if (deltaX < -20) {
-                    playerControls.moveLeft = true;
-                    playerControls.moveRight = false;
+            if (isMobile) {
+                // Mobile: Calculate angle and magnitude for omnidirectional movement
+                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                
+                if (distance > 10) { // Minimum distance threshold
+                    // Calculate angle in radians
+                    // Note: deltaY is negated because screen Y increases downward
+                    playerControls.mobileMovement.angle = Math.atan2(-deltaY, deltaX);
+                    // Normalize magnitude (cap at 100 pixels distance)
+                    const cappedDistance = Math.min(distance, 100);
+                    playerControls.mobileMovement.magnitude = cappedDistance / 100;
+                    playerControls.mobileMovement.active = true;
+                } else {
+                    playerControls.mobileMovement.magnitude = 0;
                 }
             } else {
-                // Vertical movement
-                if (deltaY < -20) {
-                    playerControls.moveForward = true;
-                    playerControls.moveBackward = false;
-                } else if (deltaY > 20) {
-                    playerControls.moveBackward = true;
-                    playerControls.moveForward = false;
+                // Desktop touch (touchscreen laptops): Keep 4-direction movement
+                if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                    // Horizontal movement
+                    if (deltaX > 20) {
+                        playerControls.moveRight = true;
+                        playerControls.moveLeft = false;
+                    } else if (deltaX < -20) {
+                        playerControls.moveLeft = true;
+                        playerControls.moveRight = false;
+                    }
+                } else {
+                    // Vertical movement
+                    if (deltaY < -20) {
+                        playerControls.moveForward = true;
+                        playerControls.moveBackward = false;
+                    } else if (deltaY > 20) {
+                        playerControls.moveBackward = true;
+                        playerControls.moveForward = false;
+                    }
                 }
             }
             
@@ -5246,11 +5371,17 @@ function setupPlayerControls() {
     
     canvas.addEventListener('touchend', (event) => {
         if (playerControls.isPlaying) {
-            // Stop movement when touch ends
-            playerControls.moveForward = false;
-            playerControls.moveBackward = false;
-            playerControls.moveLeft = false;
-            playerControls.moveRight = false;
+            if (isMobile) {
+                // Mobile: Stop omnidirectional movement
+                playerControls.mobileMovement.active = false;
+                playerControls.mobileMovement.magnitude = 0;
+            } else {
+                // Desktop touch: Stop 4-direction movement
+                playerControls.moveForward = false;
+                playerControls.moveBackward = false;
+                playerControls.moveLeft = false;
+                playerControls.moveRight = false;
+            }
             playerControls.mouseX = 0;
             playerControls.mouseY = 0;
         }
