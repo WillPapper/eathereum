@@ -27,13 +27,14 @@ Animals larger than the player will:
 - **Smooth Pursuit** - gradual turning for realistic movement
 
 #### Size-Based Chase Adjustments
-Animals that are MUCH bigger than you are less aggressive:
-- **1-2x your size**: Normal chase range (20 units), normal speed
-- **2-3x your size**: 75-50% chase range (15-10 units), 80-60% speed
-- **3-4x your size**: 50-25% chase range (10-5 units), 60-40% speed
-- **4x+ your size**: 25% chase range (5 units), 40% speed
+Animals that are bigger than you become progressively less aggressive:
+- **1-1.5x your size**: Normal chase range (20 units), normal speed
+- **1.5x your size**: 50% chase range (10 units), 70% speed
+- **2x your size**: 25% chase range (5 units), 50% speed
+- **3x your size**: 15% chase range (3 units), 30% speed
+- **4x+ your size**: 10% chase range (2 units), 20% speed
 
-This makes huge predators less threatening - they're lazy and only chase if you get very close!
+This makes huge predators almost passive - they'll only react if you practically walk into them!
 
 ### 4. Speed System
 

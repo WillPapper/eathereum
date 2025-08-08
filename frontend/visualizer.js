@@ -920,11 +920,14 @@ class TransactionAnimal {
         const sizeRatio = this.size / playerControls.size;
         let adjustedChaseRange = this.chaseRange;
         
-        // If animal is more than 2x player size, reduce chase range
-        if (sizeRatio > 2.0) {
-            // The bigger the size difference, the smaller the chase range
-            // At 2x size: 75% of normal range, at 3x: 50%, at 4x+: 25%
-            const rangeMultiplier = Math.max(0.25, 1.0 - (sizeRatio - 2.0) * 0.25);
+        // Significantly reduce chase range based on size difference
+        if (sizeRatio > 1.5) {
+            // Much more aggressive reduction in chase range
+            // At 1.5x size: 50% range (10 units)
+            // At 2x size: 25% range (5 units)
+            // At 3x size: 15% range (3 units)
+            // At 4x+ size: 10% range (2 units)
+            const rangeMultiplier = Math.max(0.1, 0.75 - (sizeRatio - 1.5) * 0.3);
             adjustedChaseRange = this.chaseRange * rangeMultiplier;
         }
         
@@ -935,10 +938,10 @@ class TransactionAnimal {
             }
             if (this.behaviorState !== 'chasing') {
                 this.behaviorState = 'chasing';
-                if (sizeRatio > 2.0) {
-                    console.log(`🎯 ${this.animalType} lazily hunting player (${sizeRatio.toFixed(1)}x bigger, range: ${adjustedChaseRange.toFixed(1)})`);
+                if (sizeRatio > 1.5) {
+                    console.log(`🦥 ${this.animalType} lazily pursuing (${sizeRatio.toFixed(1)}x bigger, range reduced to ${adjustedChaseRange.toFixed(1)} units)`);
                 } else {
-                    console.log(`🎯 ${this.animalType} hunting player at distance ${distanceToPlayer.toFixed(1)}`);
+                    console.log(`🎯 ${this.animalType} actively hunting player at distance ${distanceToPlayer.toFixed(1)}`);
                 }
             }
             
@@ -964,11 +967,14 @@ class TransactionAnimal {
             // Further reduce speed for animals that are MUCH bigger
             let effectiveChaseSpeed = this.chaseSpeed || 3.5;
             
-            // If animal is more than 2x player size, slow them down even more
-            if (sizeRatio > 2.0) {
-                // The bigger they are relative to player, the slower they chase
-                // At 2x: 80% speed, at 3x: 60%, at 4x+: 40% of their normal chase speed
-                const speedMultiplier = Math.max(0.4, 1.0 - (sizeRatio - 2.0) * 0.2);
+            // Significantly slow down animals that are much bigger
+            if (sizeRatio > 1.5) {
+                // Much slower chase speeds for big animals
+                // At 1.5x: 70% speed
+                // At 2x: 50% speed
+                // At 3x: 30% speed
+                // At 4x+: 20% speed
+                const speedMultiplier = Math.max(0.2, 1.0 - (sizeRatio - 1.5) * 0.4);
                 effectiveChaseSpeed = effectiveChaseSpeed * speedMultiplier;
             }
             
