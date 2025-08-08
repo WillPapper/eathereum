@@ -37,7 +37,8 @@ let gameState = {
     startTime: null,
     endTime: null,
     lives: 1, // Player starts with 1 life
-    maxLives: 5 // Maximum lives player can have
+    maxLives: 5, // Maximum lives player can have
+    invulnerableUntil: 0 // Timestamp when invulnerability ends
 };
 
 // Power-up fruit system
@@ -1791,6 +1792,9 @@ function checkCollisions() {
     const playerPos = playerControls.mesh.position;
     const playerRadius = playerControls.size;
     
+    // Check if player is still invulnerable
+    const isInvulnerable = Date.now() < gameState.invulnerableUntil;
+    
     // Check collisions with power-up fruits first
     for (let i = powerUpFruits.length - 1; i >= 0; i--) {
         const fruit = powerUpFruits[i];
@@ -1862,9 +1866,11 @@ function checkCollisions() {
                     playerControls.mesh.position.add(pushDirection.multiplyScalar((collisionDistance - distance) * 0.3));
                 }
             } else if (sizeRatio >= 1.2) {
-                // Clearly larger - death
-                handlePlayerDeath();
-                return;
+                // Clearly larger - death (but only if not invulnerable)
+                if (!isInvulnerable) {
+                    handlePlayerDeath();
+                    return;
+                }
             }
         }
     }
@@ -2175,9 +2181,10 @@ function handlePlayerDeath() {
         // Flash screen red
         flashScreen(0xFF0000, 200);
         
-        // Reset player position to center
+        // Reset player position to center with invulnerability
         playerControls.mesh.position.set(0, playerControls.size * 0.5 - 30, 0);
         playerControls.velocity.set(0, 0, 0);
+        gameState.invulnerableUntil = Date.now() + 3000; // 3 seconds of invulnerability
         
         // Show death notification
         showDeathNotification();
@@ -4641,6 +4648,27 @@ function animate(currentTime) {
         updateCameraFollow();
         checkCollisions();
         
+        // Update invulnerability visual effect
+        if (playerControls.mesh && Date.now() < gameState.invulnerableUntil) {
+            // Make player flash when invulnerable
+            const flashSpeed = 8; // Fast flashing
+            const opacity = 0.3 + Math.abs(Math.sin(currentTime * flashSpeed * 0.001)) * 0.7;
+            playerControls.mesh.traverse((child) => {
+                if (child.isMesh) {
+                    child.material.opacity = opacity;
+                    child.material.transparent = true;
+                }
+            });
+        } else if (playerControls.mesh) {
+            // Reset opacity when invulnerability ends
+            playerControls.mesh.traverse((child) => {
+                if (child.isMesh) {
+                    child.material.opacity = 1;
+                    child.material.transparent = false;
+                }
+            });
+        }
+        
         // Check for power-up fruit timer (every 2 minutes)
         const currentTime = Date.now();
         if (currentTime - lastPowerUpTime > POWER_UP_INTERVAL) {
@@ -5412,6 +5440,7 @@ function toggleGameMode() {
         gameState.lives = 1;
         gameState.isGameOver = false;
         gameState.startTime = Date.now();
+        gameState.invulnerableUntil = Date.now() + 3000; // 3 seconds of invulnerability at game start
         
         // Initialize power-up timer
         lastPowerUpTime = Date.now();
