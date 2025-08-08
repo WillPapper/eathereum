@@ -3662,6 +3662,17 @@ function updateStats() {
     document.getElementById('usdt-count').textContent = stats.USDT;
     document.getElementById('dai-count').textContent = stats.DAI;
     
+    // Update spawn queue indicator
+    const queueStats = wsManager.getSpawnQueue().getStats();
+    const queueEl = document.getElementById('spawn-queue');
+    if (queueEl) {
+        if (queueStats.queueLength > 0) {
+            queueEl.textContent = `${queueStats.queueLength} waiting (${queueStats.smallerRatio || '0%'} smaller)`;
+        } else {
+            queueEl.textContent = '0 waiting';
+        }
+    }
+    
     // Show money collected if any
     const moneyEl = document.getElementById('money-collected');
     if (moneyEl) {
@@ -4071,17 +4082,22 @@ function setupWebSocketListeners() {
         }
     });
     
-    // Listen for transactions
+    // Listen for transactions (for statistics only)
     wsManager.addEventListener('transaction', (event) => {
         const data = event.detail;
         
-        // Add transaction to the visualization
-        addTransaction(data);
-        
-        // Update statistics
+        // Update statistics only - animals are spawned via spawn:animal event
         stats.transactions++;
         stats.volume += parseFloat(data.amount) || 0;
         updateStats();
+    });
+    
+    // Listen for spawn:animal events from the spawn queue
+    window.addEventListener('spawn:animal', (event) => {
+        const data = event.detail;
+        
+        // Add transaction to the visualization (creates the animal)
+        addTransaction(data);
     });
     
     // Listen for connection events
@@ -4389,3 +4405,23 @@ document.addEventListener('DOMContentLoaded', () => {
 // Make game functions globally accessible for HTML buttons
 window.restartGame = restartGame;
 window.exitToGarden = exitToGarden;
+
+// Expose spawn queue configuration for debugging and tuning
+window.configureSpawnQueue = function(options) {
+    wsManager.configureSpawnQueue(options);
+    console.log('Spawn queue configured:', wsManager.getSpawnQueue().getStats());
+};
+
+// Helper function to get spawn queue stats
+window.getSpawnQueueStats = function() {
+    return wsManager.getSpawnQueue().getStats();
+};
+
+// Example usage logging
+console.log(`
+🎮 Spawn Queue Controls:
+- configureSpawnQueue({spawnDelay: 1000}) - Set spawn delay (ms)
+- configureSpawnQueue({smallerRatio: 0.7}) - Set % of animals smaller than player
+- configureSpawnQueue({maxQueueSize: 100}) - Set max queue size
+- getSpawnQueueStats() - View current queue statistics
+`);
