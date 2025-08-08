@@ -1,3 +1,3 @@
 pub mod processor;
 
-pub use processor::{MessageProcessor, ProcessorMetrics};
+pub use processor::MessageProcessor;

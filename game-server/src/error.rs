@@ -1,35 +1,36 @@
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum ServerError {
     #[error("Redis error: {0}")]
     Redis(#[from] redis::RedisError),
-    
+
     #[error("WebSocket error: {0}")]
     WebSocket(String),
-    
+
     #[error("Configuration error: {0}")]
     Config(String),
-    
+
     #[error("Message parsing error: {0}")]
     Parse(String),
-    
+
     #[error("Client disconnected: {id}")]
     ClientDisconnected { id: String },
-    
+
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
-    
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    
+
     #[error("Channel send error: {0}")]
     ChannelSend(String),
-    
+
     #[error("Timeout error: operation timed out after {seconds} seconds")]
     Timeout { seconds: u64 },
-    
+
     #[error("Service unavailable: {service}")]
     ServiceUnavailable { service: String },
-    
+
     #[error("Other error: {0}")]
     Other(String),
 }
@@ -50,6 +51,7 @@ pub struct ErrorContext {
 
 #[derive(Debug, Clone, Copy)]
 pub enum ErrorSeverity {
+    #[allow(dead_code)]
     Info,
     Warning,
     Error,
@@ -76,26 +78,34 @@ impl ErrorContext {
     }
 
     pub fn log(&self, error: &ServerError) {
-        use tracing::{error, warn, info};
-        
-        let retry_msg = if self.retryable {
-            " (will retry)"
-        } else {
-            ""
-        };
+        use tracing::{error, info, warn};
+
+        let retry_msg = if self.retryable { " (will retry)" } else { "" };
 
         match self.severity {
             ErrorSeverity::Info => {
-                info!("Operation '{}' info: {}{}", self.operation, error, retry_msg);
+                info!(
+                    "Operation '{}' info: {}{}",
+                    self.operation, error, retry_msg
+                );
             }
             ErrorSeverity::Warning => {
-                warn!("Operation '{}' warning: {}{}", self.operation, error, retry_msg);
+                warn!(
+                    "Operation '{}' warning: {}{}",
+                    self.operation, error, retry_msg
+                );
             }
             ErrorSeverity::Error => {
-                error!("Operation '{}' failed: {}{}", self.operation, error, retry_msg);
+                error!(
+                    "Operation '{}' failed: {}{}",
+                    self.operation, error, retry_msg
+                );
             }
             ErrorSeverity::Critical => {
-                error!("CRITICAL: Operation '{}' failed: {}{}", self.operation, error, retry_msg);
+                error!(
+                    "CRITICAL: Operation '{}' failed: {}{}",
+                    self.operation, error, retry_msg
+                );
             }
         }
     }
@@ -110,18 +120,18 @@ impl ErrorExt for ServerError {
     fn is_retryable(&self) -> bool {
         matches!(
             self,
-            ServerError::Redis(_) 
-            | ServerError::Timeout { .. }
-            | ServerError::ServiceUnavailable { .. }
+            ServerError::Redis(_)
+                | ServerError::Timeout { .. }
+                | ServerError::ServiceUnavailable { .. }
         )
     }
 
     fn should_reconnect(&self) -> bool {
         matches!(
             self,
-            ServerError::Redis(_) 
-            | ServerError::ClientDisconnected { .. }
-            | ServerError::ServiceUnavailable { .. }
+            ServerError::Redis(_)
+                | ServerError::ClientDisconnected { .. }
+                | ServerError::ServiceUnavailable { .. }
         )
     }
 }
@@ -138,7 +148,10 @@ mod tests {
         assert_eq!(err.to_string(), "Client disconnected: client-123");
 
         let err = ServerError::Timeout { seconds: 30 };
-        assert_eq!(err.to_string(), "Timeout error: operation timed out after 30 seconds");
+        assert_eq!(
+            err.to_string(),
+            "Timeout error: operation timed out after 30 seconds"
+        );
     }
 
     #[test]

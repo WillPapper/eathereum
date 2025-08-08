@@ -1,7 +1,4 @@
-use crate::{
-    config::HealthConfig,
-    error::Result,
-};
+use crate::{config::HealthConfig, error::Result};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
@@ -30,7 +27,7 @@ impl HealthServer {
             websocket_clients: 0,
             messages_processed: 0,
         }));
-        
+
         (
             Self {
                 config,
@@ -47,11 +44,13 @@ impl HealthServer {
             .and(with_status(self.status.clone()))
             .and_then(get_health);
 
-        let routes = health
-            .with(warp::cors().allow_any_origin());
+        let routes = health.with(warp::cors().allow_any_origin());
 
-        info!("Health server listening on http://0.0.0.0:{}", self.config.port);
-        
+        info!(
+            "Health server listening on http://0.0.0.0:{}",
+            self.config.port
+        );
+
         warp::serve(routes)
             .run(([0, 0, 0, 0], self.config.port))
             .await;
@@ -70,7 +69,7 @@ async fn get_health(
     status: Arc<RwLock<HealthStatus>>,
 ) -> std::result::Result<impl Reply, Rejection> {
     let health = status.read().await;
-    
+
     let response = serde_json::json!({
         "status": &health.status,
         "timestamp": &health.timestamp,
@@ -108,7 +107,7 @@ pub async fn update_health_status(
     health.redis_connected = redis_connected;
     health.websocket_clients = websocket_clients;
     health.messages_processed = messages_processed;
-    
+
     // Determine overall health
     health.status = if redis_connected {
         "healthy".to_string()
@@ -127,12 +126,12 @@ mod tests {
             port: 8081,
             path: "/health".to_string(),
         };
-        
+
         let (server, status) = HealthServer::new(config);
-        
+
         // Update health status
         update_health_status(status.clone(), true, 5, 100).await;
-        
+
         // Check status
         let health = status.read().await;
         assert_eq!(health.status, "healthy");
@@ -147,12 +146,12 @@ mod tests {
             port: 8081,
             path: "/health".to_string(),
         };
-        
+
         let (_server, status) = HealthServer::new(config);
-        
+
         // Update with Redis disconnected
         update_health_status(status.clone(), false, 10, 200).await;
-        
+
         // Check status
         let health = status.read().await;
         assert_eq!(health.status, "degraded");

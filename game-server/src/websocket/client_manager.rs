@@ -11,8 +11,10 @@ use warp::ws::Message;
 
 #[derive(Clone)]
 pub struct Client {
+    #[allow(dead_code)]
     pub id: String,
     pub sender: mpsc::UnboundedSender<Message>,
+    #[allow(dead_code)]
     pub connected_at: Instant,
     pub last_activity: Arc<RwLock<Instant>>,
 }
@@ -51,29 +53,37 @@ impl ClientManager {
         }
     }
 
-    pub async fn add_client(&self, id: String, sender: mpsc::UnboundedSender<Message>) -> Result<()> {
+    pub async fn add_client(
+        &self,
+        id: String,
+        sender: mpsc::UnboundedSender<Message>,
+    ) -> Result<()> {
         let client = Client::new(id.clone(), sender);
-        
+
         let mut clients = self.clients.write().await;
         if clients.contains_key(&id) {
             warn!("Client {} already exists, replacing", id);
         }
-        
+
         clients.insert(id.clone(), client);
         info!("Client {} connected. Total clients: {}", id, clients.len());
-        
+
         Ok(())
     }
 
     pub async fn remove_client(&self, id: &str) -> Result<()> {
         let mut clients = self.clients.write().await;
-        
+
         if clients.remove(id).is_some() {
-            info!("Client {} disconnected. Total clients: {}", id, clients.len());
+            info!(
+                "Client {} disconnected. Total clients: {}",
+                id,
+                clients.len()
+            );
         } else {
             debug!("Client {} was not in the list", id);
         }
-        
+
         Ok(())
     }
 
@@ -81,7 +91,7 @@ impl ClientManager {
         let clients = self.clients.read().await;
         let mut successful = 0;
         let mut failed = Vec::new();
-        
+
         for (id, client) in clients.iter() {
             match client.sender.send(Message::text(message.to_string())) {
                 Ok(_) => {
@@ -93,9 +103,9 @@ impl ClientManager {
                 }
             }
         }
-        
+
         debug!("Broadcast to {}/{} clients", successful, clients.len());
-        
+
         // Clean up failed clients
         if !failed.is_empty() {
             drop(clients); // Release read lock
@@ -103,15 +113,17 @@ impl ClientManager {
                 self.remove_client(id).await.ok();
             }
         }
-        
+
         BroadcastResult { successful, failed }
     }
 
     pub async fn send_to_client(&self, client_id: &str, message: Message) -> Result<()> {
         let clients = self.clients.read().await;
-        
+
         if let Some(client) = clients.get(client_id) {
-            client.sender.send(message)
+            client
+                .sender
+                .send(message)
                 .map_err(|_| ServerError::ClientDisconnected {
                     id: client_id.to_string(),
                 })?;
@@ -128,6 +140,7 @@ impl ClientManager {
         self.clients.read().await.len()
     }
 
+    #[allow(dead_code)]
     pub async fn get_client_ids(&self) -> Vec<String> {
         self.clients.read().await.keys().cloned().collect()
     }
@@ -136,20 +149,20 @@ impl ClientManager {
         let timeout_secs = self.config.client_timeout_secs;
         let clients = self.clients.read().await;
         let mut inactive_ids = Vec::new();
-        
+
         for (id, client) in clients.iter() {
             if !client.is_active(timeout_secs).await {
                 inactive_ids.push(id.clone());
             }
         }
-        
+
         drop(clients); // Release read lock
-        
+
         for id in &inactive_ids {
             info!("Removing inactive client: {}", id);
             self.remove_client(id).await.ok();
         }
-        
+
         Ok(inactive_ids)
     }
 
@@ -157,21 +170,21 @@ impl ClientManager {
         let clients = self.clients.read().await;
         let mut successful = 0;
         let mut failed = Vec::new();
-        
+
         for (id, client) in clients.iter() {
             match client.sender.send(Message::ping(vec![])) {
                 Ok(_) => successful += 1,
                 Err(_) => failed.push(id.clone()),
             }
         }
-        
+
         drop(clients);
-        
+
         // Clean up failed clients
         for id in &failed {
             self.remove_client(id).await.ok();
         }
-        
+
         BroadcastResult { successful, failed }
     }
 }
@@ -182,10 +195,12 @@ pub struct BroadcastResult {
 }
 
 impl BroadcastResult {
+    #[allow(dead_code)]
     pub fn all_successful(&self) -> bool {
         self.failed.is_empty()
     }
-    
+
+    #[allow(dead_code)]
     pub fn success_rate(&self) -> f64 {
         if self.successful + self.failed.len() == 0 {
             0.0
@@ -207,25 +222,25 @@ mod tests {
             client_timeout_secs: 300,
             ping_interval_secs: 30,
         };
-        
+
         let manager = ClientManager::new(config);
-        
+
         // Add a client
         let (tx, mut rx) = mpsc::unbounded_channel();
         manager.add_client("client1".to_string(), tx).await.unwrap();
-        
+
         assert_eq!(manager.get_client_count().await, 1);
-        
+
         // Broadcast a message
         let result = manager.broadcast("test message").await;
         assert_eq!(result.successful, 1);
         assert_eq!(result.failed.len(), 0);
-        
+
         // Check message received
         if let Some(msg) = rx.recv().await {
             assert_eq!(msg.to_str().unwrap(), "test message");
         }
-        
+
         // Remove client
         manager.remove_client("client1").await.unwrap();
         assert_eq!(manager.get_client_count().await, 0);
@@ -237,7 +252,7 @@ mod tests {
             successful: 8,
             failed: vec!["client1".to_string(), "client2".to_string()],
         };
-        
+
         assert!(!result.all_successful());
         assert_eq!(result.success_rate(), 0.8);
     }

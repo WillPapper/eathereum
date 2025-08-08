@@ -75,24 +75,24 @@ impl MessageProcessor {
             "Starting message processor for stream: {}",
             self.redis_consumer.get_stream_key()
         );
-        
+
         let mut consecutive_errors = 0;
         let max_consecutive_errors = 5;
-        
+
         loop {
             match self.process_batch().await {
                 Ok(count) => {
                     consecutive_errors = 0;
-                    
+
                     let mut metrics = self.metrics.write().await;
                     metrics.record_batch(count);
-                    
+
                     // Log statistics periodically
                     if metrics.should_log_stats(self.config.stats_interval_secs) {
                         self.log_statistics(&metrics).await;
                         metrics.reset_stats_timer();
                     }
-                    
+
                     // Warn if no messages for a while
                     if let Some(last_time) = metrics.last_message_time {
                         if last_time.elapsed().as_secs() > self.config.warning_interval_secs {
@@ -105,7 +105,7 @@ impl MessageProcessor {
                 }
                 Err(e) => {
                     consecutive_errors += 1;
-                    
+
                     let context = ErrorContext::new("process_batch")
                         .retryable()
                         .with_severity(if consecutive_errors >= max_consecutive_errors {
@@ -113,15 +113,15 @@ impl MessageProcessor {
                         } else {
                             ErrorSeverity::Warning
                         });
-                    
+
                     context.log(&e);
                     self.metrics.write().await.record_failure();
-                    
+
                     if consecutive_errors >= max_consecutive_errors {
                         error!("Too many consecutive errors, exiting processor");
                         return Err(e);
                     }
-                    
+
                     self.handle_error(e).await?;
                 }
             }
@@ -131,14 +131,14 @@ impl MessageProcessor {
     async fn process_batch(&mut self) -> Result<usize> {
         // Read messages from Redis stream
         let messages = self.redis_consumer.read_pending_messages().await?;
-        
+
         if messages.is_empty() {
             debug!("No new messages in stream");
             return Ok(0);
         }
-        
+
         info!("Processing {} messages", messages.len());
-        
+
         let mut processed = 0;
         for message in messages {
             match self.process_single_message(&message).await {
@@ -156,7 +156,7 @@ impl MessageProcessor {
                 }
             }
         }
-        
+
         Ok(processed)
     }
 
@@ -164,13 +164,13 @@ impl MessageProcessor {
         // Format message for display
         let display_str = message.format_for_display(self.config.address_display_length);
         debug!("Processing: {}", display_str);
-        
+
         // Convert to JSON for broadcasting
         let json = message.to_json()?;
-        
+
         // Broadcast to all connected clients
         let result = self.client_manager.broadcast(&json).await;
-        
+
         if result.successful > 0 {
             debug!(
                 "Broadcast message to {} clients (failed: {})",
@@ -180,7 +180,7 @@ impl MessageProcessor {
         } else if !result.failed.is_empty() {
             warn!("Failed to broadcast to any clients");
         }
-        
+
         Ok(())
     }
 
@@ -200,7 +200,7 @@ impl MessageProcessor {
 
     async fn log_statistics(&self, metrics: &ProcessorMetrics) {
         let client_count = self.client_manager.get_client_count().await;
-        
+
         info!(
             "Stats - Messages: {} | Failed: {} | Batches: {} | Clients: {}",
             metrics.messages_processed,
@@ -230,12 +230,12 @@ mod tests {
     #[test]
     fn test_processor_metrics() {
         let mut metrics = ProcessorMetrics::new();
-        
+
         metrics.record_batch(5);
         assert_eq!(metrics.messages_processed, 5);
         assert_eq!(metrics.batches_processed, 1);
         assert!(metrics.last_message_time.is_some());
-        
+
         metrics.record_failure();
         assert_eq!(metrics.messages_failed, 1);
     }
@@ -243,10 +243,10 @@ mod tests {
     #[tokio::test]
     async fn test_metrics_timing() {
         let mut metrics = ProcessorMetrics::new();
-        
+
         assert!(metrics.should_log_stats(0));
         assert!(!metrics.should_log_stats(60));
-        
+
         metrics.reset_stats_timer();
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(metrics.should_log_stats(0));

@@ -6,7 +6,10 @@ use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
-use warp::{Filter, ws::{Message, WebSocket}};
+use warp::{
+    ws::{Message, WebSocket},
+    Filter,
+};
 
 pub async fn handle_connection(
     ws: WebSocket,
@@ -14,29 +17,29 @@ pub async fn handle_connection(
     client_manager: Arc<ClientManager>,
 ) {
     info!("New WebSocket connection: {}", client_id);
-    
+
     let (mut ws_sender, mut ws_receiver) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel();
-    
+
     // Register client with manager
     if let Err(e) = client_manager.add_client(client_id.clone(), tx).await {
         error!("Failed to add client {}: {}", client_id, e);
         return;
     }
-    
+
     // Send welcome message
     let welcome = serde_json::json!({
         "type": "connected",
         "client_id": &client_id,
         "message": "Connected to Game Server WebSocket"
     });
-    
+
     if let Err(e) = ws_sender.send(Message::text(welcome.to_string())).await {
         warn!("Failed to send welcome message to {}: {}", client_id, e);
         client_manager.remove_client(&client_id).await.ok();
         return;
     }
-    
+
     // Spawn task to send messages from channel to WebSocket
     let send_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
@@ -45,7 +48,7 @@ pub async fn handle_connection(
             }
         }
     });
-    
+
     // Handle incoming messages from client
     while let Some(result) = ws_receiver.next().await {
         match result {
@@ -60,7 +63,7 @@ pub async fn handle_connection(
             }
         }
     }
-    
+
     // Cleanup on disconnect
     info!("Client {} disconnecting", client_id);
     send_task.abort();
@@ -75,7 +78,7 @@ async fn handle_client_message(
     if msg.is_text() {
         let text = msg.to_str().unwrap_or("");
         debug!("Received text from {}: {}", client_id, text);
-        
+
         // Handle specific commands
         if text == "ping" {
             client_manager
@@ -89,7 +92,11 @@ async fn handle_client_message(
         }
         // You can add more command handlers here
     } else if msg.is_binary() {
-        debug!("Received binary from {}: {} bytes", client_id, msg.as_bytes().len());
+        debug!(
+            "Received binary from {}: {} bytes",
+            client_id,
+            msg.as_bytes().len()
+        );
         // Handle binary messages if needed
     } else if msg.is_ping() {
         debug!("Received ping from {}", client_id);
@@ -105,7 +112,7 @@ async fn handle_client_message(
             id: client_id.to_string(),
         });
     }
-    
+
     Ok(())
 }
 
@@ -138,7 +145,7 @@ mod tests {
             "client_id": client_id,
             "message": "Connected to Game Server WebSocket"
         });
-        
+
         let json_str = welcome.to_string();
         assert!(json_str.contains("connected"));
         assert!(json_str.contains(client_id));
@@ -152,10 +159,10 @@ mod tests {
             client_timeout_secs: 300,
             ping_interval_secs: 30,
         };
-        
+
         let client_manager = Arc::new(ClientManager::new(config));
         let stats = get_connection_stats(&client_manager).await;
-        
+
         assert!(stats.contains("\"connected_clients\":0"));
         assert!(stats.contains("\"type\":\"stats\""));
     }

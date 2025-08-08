@@ -45,16 +45,13 @@ impl Config {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Config {
             redis: RedisConfig {
-                url: env::var("REDIS_URL")
-                    .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string()),
+                url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string()),
                 stream_key: env::var("REDIS_STREAM_KEY")
                     .unwrap_or_else(|_| "stablecoin:transactions".to_string()),
                 consumer_group: env::var("CONSUMER_GROUP")
                     .unwrap_or_else(|_| "websocket-publisher".to_string()),
                 consumer_name: env::var("CONSUMER_NAME")
-                    .unwrap_or_else(|_| {
-                        format!("consumer-{}", uuid::Uuid::new_v4().to_string())
-                    }),
+                    .unwrap_or_else(|_| format!("consumer-{}", uuid::Uuid::new_v4())),
                 batch_size: env::var("BATCH_SIZE")
                     .unwrap_or_else(|_| "10".to_string())
                     .parse()?,
@@ -96,8 +93,7 @@ impl Config {
                 port: env::var("HEALTH_PORT")
                     .unwrap_or_else(|_| "8081".to_string())
                     .parse()?,
-                path: env::var("HEALTH_PATH")
-                    .unwrap_or_else(|_| "/health".to_string()),
+                path: env::var("HEALTH_PATH").unwrap_or_else(|_| "/health".to_string()),
             },
         })
     }
@@ -106,19 +102,19 @@ impl Config {
         if self.redis.batch_size == 0 {
             return Err("Batch size must be greater than 0".to_string());
         }
-        
+
         if self.redis.block_timeout_ms == 0 {
             return Err("Block timeout must be greater than 0".to_string());
         }
-        
+
         if self.websocket.port == 0 {
             return Err("WebSocket port must be valid".to_string());
         }
-        
+
         if self.health.port == 0 {
             return Err("Health port must be valid".to_string());
         }
-        
+
         Ok(())
     }
 
@@ -145,7 +141,7 @@ mod tests {
     fn test_config_validation() {
         let mut config = Config::from_env().unwrap();
         assert!(config.validate().is_ok());
-        
+
         config.redis.batch_size = 0;
         assert!(config.validate().is_err());
     }
@@ -153,10 +149,10 @@ mod tests {
     #[test]
     fn test_redis_url_masking() {
         let mut config = Config::from_env().unwrap();
-        
+
         config.redis.url = "redis://user:password@localhost:6379".to_string();
         assert_eq!(config.mask_redis_url(), "redis://***@localhost:6379");
-        
+
         config.redis.url = "redis://localhost:6379".to_string();
         assert_eq!(config.mask_redis_url(), "redis://localhost:6379");
     }
