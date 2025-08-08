@@ -269,36 +269,41 @@ export class PlayerController {
     update(deltaTime, camera) {
         if (!this.controls.mesh || !this.controls.isPlaying) return;
         
-        // Update rotation
+        // Calculate movement direction based on camera
+        const forward = new THREE.Vector3();
+        const right = new THREE.Vector3();
+        
+        camera.getWorldDirection(forward);
+        forward.y = 0;
+        forward.normalize();
+        
+        right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
+        
+        // Apply movement
+        const moveVector = new THREE.Vector3();
+        
+        if (this.controls.moveForward) moveVector.add(forward);
+        if (this.controls.moveBackward) moveVector.sub(forward);
+        if (this.controls.moveLeft) moveVector.sub(right);
+        if (this.controls.moveRight) moveVector.add(right);
+        
+        // Handle rotation with Q and E keys
         if (this.controls.rotateLeft) {
-            this.controls.rotation += this.controls.rotationSpeed;
-        }
-        if (this.controls.rotateRight) {
             this.controls.rotation -= this.controls.rotationSpeed;
         }
-        
-        // Calculate movement direction
-        const moveDirection = new THREE.Vector3();
-        
-        if (this.controls.moveForward) {
-            moveDirection.z = 1;
-        }
-        if (this.controls.moveBackward) {
-            moveDirection.z = -1;
-        }
-        if (this.controls.moveLeft) {
-            moveDirection.x = -1;
-        }
-        if (this.controls.moveRight) {
-            moveDirection.x = 1;
+        if (this.controls.rotateRight) {
+            this.controls.rotation += this.controls.rotationSpeed;
         }
         
-        moveDirection.normalize();
-        moveDirection.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.controls.rotation);
-        
-        // Apply movement with speed
-        const speed = this.controls.boost ? this.controls.speed * 1.5 : this.controls.speed;
-        this.controls.velocity.lerp(moveDirection.multiplyScalar(speed), 0.1);
+        // Normalize and apply movement with speed
+        if (moveVector.length() > 0) {
+            moveVector.normalize();
+            const speed = this.controls.boost ? this.controls.speed * 1.5 : this.controls.speed;
+            moveVector.multiplyScalar(speed * deltaTime);
+            this.controls.velocity.lerp(moveVector, 0.1);
+        } else {
+            this.controls.velocity.lerp(new THREE.Vector3(0, 0, 0), 0.1);
+        }
         
         // Update position
         this.controls.mesh.position.add(
