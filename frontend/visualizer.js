@@ -554,9 +554,6 @@ class TransactionAnimal {
         this.mergePartner = null; // Partner for alliance merging
         this.hasMerged = false; // Flag to prevent double-merging
         
-        // Spawn protection - 1 second of invulnerability
-        this.spawnProtectionTime = Date.now() + 1000; // 1 second of protection
-        
         // Get animal color based on stablecoin
         this.baseColor = STABLECOIN_COLORS[stablecoin] || 0xFFFFFF;
         
@@ -762,26 +759,6 @@ class TransactionAnimal {
         }
         
         if (!this.isAlive || isPaused) return true;
-        
-        // Update spawn protection visual effect
-        if (Date.now() < this.spawnProtectionTime) {
-            // Make animal semi-transparent during spawn protection
-            this.mesh.traverse(child => {
-                if (child.isMesh && child.material) {
-                    child.material.transparent = true;
-                    child.material.opacity = 0.5 + Math.sin(Date.now() * 0.01) * 0.2; // Pulsing effect
-                }
-            });
-        } else if (this.spawnProtectionTime > 0 && Date.now() >= this.spawnProtectionTime) {
-            // Restore full opacity when protection expires
-            this.mesh.traverse(child => {
-                if (child.isMesh && child.material) {
-                    child.material.transparent = false;
-                    child.material.opacity = 1.0;
-                }
-            });
-            this.spawnProtectionTime = 0; // Mark as expired
-        }
         
         // Update threat indicator based on player size
         this.updateThreatIndicator();
@@ -1847,12 +1824,6 @@ function checkCollisions() {
     // Check collisions with animals
     for (let i = animals.length - 1; i >= 0; i--) {
         const animal = animals[i];
-        
-        // Skip animals with spawn protection
-        if (Date.now() < animal.spawnProtectionTime) {
-            continue;
-        }
-        
         const distance = playerPos.distanceTo(animal.mesh.position);
         const collisionDistance = playerRadius + animal.size;
         
