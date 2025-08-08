@@ -30,16 +30,31 @@ Animals larger than the player will:
 ### 4. Speed System
 
 #### Base Speeds
-- **Player**: 10 units/second
+- **Player**: 10 units/second (base, can be boosted)
 - **Small Animals (Rabbits)**: 0.6-2.4 units/second base
 - **Medium Animals (Foxes)**: 0.5-2.0 units/second base
 - **Large Animals (Deer)**: 0.45-1.8 units/second base
 - **Giant Animals (Bears)**: 0.3-1.2 units/second base
 
-#### Speed Modifiers
-- **Fleeing**: 1.5x to 2x base speed (based on proximity)
-- **Chasing**: 85% of player's current speed
-- **Wandering**: Base speed
+#### Fixed Chase/Flee Speeds (NOT affected by player speed boosts)
+- **Rabbits**: 
+  - Chase: N/A (too small to chase)
+  - Flee: 2x their base speed + panic modifier
+- **Foxes**:
+  - Chase: 8.0 units/second (80% of base player speed)
+  - Flee: 1.8x their base speed
+- **Deer**:
+  - Chase: 8.5 units/second (85% of base player speed)
+  - Flee: 1.5x their base speed
+- **Bears**:
+  - Chase: 7.5 units/second (75% of base player speed)
+  - Flee: 1.3x their base speed (rarely flee)
+
+#### Important: Speed Boost Independence
+When the player collects speed boost fruits:
+- Player speed increases (e.g., 10 → 20 units/second)
+- **Predator chase speeds remain fixed** (e.g., Bear still chases at 7.5 units/second)
+- This allows speed boosts to be an effective escape mechanism
 
 ### 5. Visual Indicators
 - **Green Plus (+)**: Edible animal

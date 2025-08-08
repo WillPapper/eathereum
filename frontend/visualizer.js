@@ -554,19 +554,28 @@ class TransactionAnimal {
             this.animalType = 'rabbit';
             this.baseSpeed *= 1.2; // Rabbits are slightly faster
             this.speed = this.baseSpeed;
+            this.chaseSpeed = 7.0; // Won't chase (too small)
+            this.fleeSpeed = this.baseSpeed * 2.0; // Can flee fast
         } else if (this.amount < 1000) {
             this.createMediumAnimal(); // Fox
             this.animalType = 'fox';
+            this.speed = this.baseSpeed; // Initialize current speed
+            this.chaseSpeed = 8.0; // 80% of base player speed
+            this.fleeSpeed = this.baseSpeed * 1.8;
         } else if (this.amount < 10000) {
             this.createLargeAnimal(); // Deer
             this.animalType = 'deer';
             this.baseSpeed *= 0.9; // Deer are slightly slower
             this.speed = this.baseSpeed;
+            this.chaseSpeed = 8.5; // 85% of base player speed
+            this.fleeSpeed = this.baseSpeed * 1.5;
         } else {
             this.createGiantAnimal(); // Bear (whale transaction)
             this.animalType = 'bear';
             this.baseSpeed *= 0.6; // Bears are slower but valuable
             this.speed = this.baseSpeed;
+            this.chaseSpeed = 7.5; // 75% of base player speed - slower but persistent
+            this.fleeSpeed = this.baseSpeed * 1.3; // Bears don't flee much
         }
         
         // Start with small scale for spawn animation
@@ -894,9 +903,10 @@ class TransactionAnimal {
             const directionDiff = this.normalizeAngle(fleeAngle - this.targetDirection);
             this.targetDirection += directionDiff * 0.25; // Responsive turning
             
-            // Flee speed based on proximity - panic more when closer
+            // Use fixed flee speed with panic modifier based on proximity
             const panicFactor = 1 - (distanceToPlayer / this.fleeRange);
-            this.speed = this.baseSpeed * (1.5 + panicFactor * 0.5); // 1.5x to 2x base speed when fleeing
+            const baseFlee = this.fleeSpeed || (this.baseSpeed * 1.5); // Fallback if fleeSpeed not set
+            this.speed = baseFlee * (1 + panicFactor * 0.3); // Add up to 30% more speed when very close
             
             // Store last player sighting for smarter fleeing
             this.lastPlayerSighting = playerControls.mesh.position.clone();
@@ -910,7 +920,7 @@ class TransactionAnimal {
             
             // Calculate predictive chase direction (lead the target)
             const playerVelocity = playerControls.velocity.clone();
-            const predictTime = distanceToPlayer / (playerControls.speed * 0.1); // Estimate intercept time
+            const predictTime = distanceToPlayer / (this.baseSpeed * 0.1); // Use predator's speed for prediction
             const predictedPosition = playerControls.mesh.position.clone();
             predictedPosition.add(playerVelocity.clone().multiplyScalar(predictTime * 0.3)); // Partial prediction
             
@@ -926,9 +936,9 @@ class TransactionAnimal {
             const directionDiff = this.normalizeAngle(chaseAngle - this.targetDirection);
             this.targetDirection += directionDiff * 0.2; // Moderate turning speed
             
-            // Chase speed - 85% of player speed to allow escape
-            const playerSpeed = playerControls.speed * (1 + playerControls.size * 0.1);
-            this.speed = playerSpeed * 0.085; // 85% of player speed (accounting for 0.1 velocity multiplier)
+            // Use fixed chase speed for this animal type
+            // This ensures predators don't speed up when player gets speed boosts
+            this.speed = this.chaseSpeed || 8.5; // Use animal's chase speed or default to 85% of base player speed
             
             // Store last player sighting
             this.lastPlayerSighting = playerControls.mesh.position.clone();
