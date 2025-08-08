@@ -189,6 +189,7 @@ export class EntityManager {
     spawnFromQueue(transactionData) {
         // Decide whether to spawn as plant or animal based on amount
         const amount = parseFloat(transactionData.amount);
+        console.log('Spawning from queue:', { amount, data: transactionData });
         
         if (amount > 1000) {
             this.addPlant(transactionData);
@@ -286,7 +287,7 @@ export class EntityManager {
         
         // Random position
         plantGroup.position.x = (Math.random() - 0.5) * CONFIG.GARDEN_RADIUS * 1.5;
-        plantGroup.position.y = -30;
+        plantGroup.position.y = 0;
         plantGroup.position.z = (Math.random() - 0.5) * CONFIG.GARDEN_RADIUS * 1.5;
         
         // Start small for growth animation

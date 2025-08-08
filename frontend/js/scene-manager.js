@@ -107,7 +107,7 @@ export class SceneManager {
         
         this.ground = new THREE.Mesh(groundGeometry, groundMaterial);
         this.ground.rotation.x = -Math.PI / 2;
-        this.ground.position.y = -30;
+        this.ground.position.y = 0;
         this.ground.receiveShadow = true;
         
         // Add some variation to the ground
@@ -138,7 +138,7 @@ export class SceneManager {
         });
         
         const border = new THREE.Mesh(borderGeometry, borderMaterial);
-        border.position.y = -29;
+        border.position.y = 1;
         border.rotation.x = -Math.PI / 2;
         border.castShadow = true;
         border.receiveShadow = true;
