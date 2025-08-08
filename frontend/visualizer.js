@@ -4723,8 +4723,8 @@ function checkBirdCollisions_REMOVED() {
         const plantCollisionRadius = plant.isFullyGrown ? plant.targetHeight * 0.5 : 0;
         
         if (distance < collisionRadius + plantCollisionRadius) {
-            // Game Over - hit a plant!
-            triggerGameOver('plant');
+            // Skip collision - plants are no longer deadly
+            // They're just decorative now
             return;
         }
     }
@@ -4799,48 +4799,27 @@ function showEatEffect(position, value, stablecoin) {
     // Show value text (optional - could add floating text here)
 }
 
-// Trigger game over (old function - kept for compatibility)
-function triggerGameOver(reason) {
-    if (gameState.isGameOver) return;
-    
-    gameState.isGameOver = true;
-    gameState.endTime = Date.now();
-    
-    // Stop player movement
-    if (playerControls.isPlaying) {
-        playerControls.velocity.set(0, 0, 0);
-        playerControls.moveForward = false;
-        playerControls.moveBackward = false;
-        playerControls.moveLeft = false;
-        playerControls.moveRight = false;
-        playerControls.rotateLeft = false;
-        playerControls.rotateRight = false;
-        playerControls.boost = false;
-    }
-    
-    // Update high score
-    if (gameState.currentScore > gameState.highScore) {
-        gameState.highScore = gameState.currentScore;
-        localStorage.setItem('stablecoinHuntHighScore', gameState.highScore.toString());
-    }
-    
-    // Show game over screen
-    showGameOverScreen(reason);
-    
-    console.log(`GAME OVER! Hit a ${reason}. Score: $${gameState.currentScore.toFixed(2)}`);
-}
-
 // Show game over screen
 function showGameOverScreen(reason) {
+    // Remove any existing game over screen
+    const existingScreen = document.getElementById('game-over-screen') || document.getElementById('game-over');
+    if (existingScreen) {
+        existingScreen.remove();
+    }
+    
     const gameOverDiv = document.createElement('div');
     gameOverDiv.id = 'game-over-screen';
+    
+    // Death message - always from larger animal now
+    const deathMessage = 'You were eaten by a larger animal!';
+    
     gameOverDiv.innerHTML = `
         <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
                     background: linear-gradient(135deg, rgba(255, 0, 0, 0.9), rgba(139, 0, 0, 0.9)); 
                     color: white; padding: 40px; border-radius: 20px; text-align: center; 
                     z-index: 2000; box-shadow: 0 10px 40px rgba(0,0,0,0.8); min-width: 400px;">
             <h1 style="margin: 0 0 20px 0; font-size: 48px;">💀 GAME OVER 💀</h1>
-            <p style="font-size: 24px; margin: 10px 0;">You hit a poisonous plant!</p>
+            <p style="font-size: 24px; margin: 10px 0;">${deathMessage}</p>
             <div style="margin: 30px 0;">
                 <p style="font-size: 20px; margin: 10px 0;">Final Score: <span style="color: #FFD700; font-size: 32px; font-weight: bold;">$${gameState.currentScore.toFixed(2)}</span></p>
                 <p style="font-size: 16px; margin: 10px 0;">High Score: <span style="color: #FFD700;">$${gameState.highScore.toFixed(2)}</span></p>
