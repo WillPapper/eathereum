@@ -772,14 +772,19 @@ class TransactionAnimal {
             this.targetDirection += normalizedDiff * 0.15;
         }
         
-        // Random wandering behavior when not actively hunting, fleeing, or chasing
-        if ((this.aiState === 'roaming' || this.aiState === 'growing') && this.behaviorState === 'wandering') {
+        // Random wandering behavior when not actively hunting, fleeing, chasing, or merging
+        if ((this.aiState === 'roaming' || this.aiState === 'growing') && this.behaviorState === 'wandering' && this.aiState !== 'merging') {
             this.targetDirection += (Math.random() - 0.5) * this.turnSpeed;
             
             // Return to base speed when wandering
             if (this.speed !== this.baseSpeed) {
                 this.speed = this.speed * 0.95 + this.baseSpeed * 0.05;
             }
+        }
+        
+        // Skip wandering if merging - the seekMergePartner handles movement
+        if (this.aiState === 'merging') {
+            // Movement is handled by seekMergePartner
         }
         
         // Apply movement
@@ -851,15 +856,31 @@ class TransactionAnimal {
         return this.isAlive;
     }
     
-    // New AI behavior system for survival mode
+    // New AI behavior system for survival and alliance modes
     updateAIBehavior() {
         // Default behavior - react to player if close
         if (playerControls.mesh) {
             this.handlePlayerInteraction();
         }
         
+        // Alliance mode: animals merge to challenge player
+        if (difficultyLevel === 'alliance' || this.aiState === 'merging') {
+            this.handleAllianceMode();
+        }
         // Survival mode: animals hunt each other
-        if (difficultyLevel === 'survival') {
+        else if (difficultyLevel === 'survival') {
+            this.handleSurvivalMode();
+        }
+    }
+    
+    // Handle alliance mode behavior (merging)
+    handleAllianceMode() {
+        // If this animal has a merge partner, seek them
+        if (this.aiState === 'merging' && this.mergePartner) {
+            this.seekMergePartner();
+        }
+        // Otherwise handle survival mode behaviors too
+        else if (difficultyLevel === 'survival') {
             this.handleSurvivalMode();
         }
     }
@@ -1080,33 +1101,46 @@ class TransactionAnimal {
     // Seek merge partner during alliance mode
     seekMergePartner() {
         if (!this.mergePartner || !this.mergePartner.isAlive) {
+            console.log(`🔴 ${this.animalType} lost merge partner, returning to roaming`);
             this.aiState = 'roaming';
             this.mergePartner = null;
             return;
         }
         
         const distance = this.mesh.position.distanceTo(this.mergePartner.mesh.position);
-        const mergeRange = this.size + this.mergePartner.size + 1;
+        const mergeRange = this.size + this.mergePartner.size + 2; // Slightly larger range
         
         if (distance < mergeRange) {
-            // Close enough to merge!
-            mergeAnimals(this, this.mergePartner);
+            // Close enough to merge! Only merge once (prevent double merge)
+            if (this.size >= this.mergePartner.size) {
+                console.log(`🔀 ${this.animalType} merging with ${this.mergePartner.animalType}!`);
+                mergeAnimals(this, this.mergePartner);
+            }
         } else {
-            // Move toward merge partner
+            // Move toward merge partner more aggressively
             const moveDirection = new THREE.Vector3();
             moveDirection.subVectors(this.mergePartner.mesh.position, this.mesh.position);
             moveDirection.y = 0;
             moveDirection.normalize();
             
-            // Set direction toward partner
-            this.targetDirection = Math.atan2(moveDirection.x, moveDirection.z);
+            // Set direction toward partner with smooth turning
+            const targetAngle = Math.atan2(moveDirection.x, moveDirection.z);
+            const angleDiff = this.normalizeAngle(targetAngle - this.targetDirection);
+            this.targetDirection += angleDiff * 0.3; // Smooth but responsive turning
             
-            // Move faster when merging
-            this.speed = this.baseSpeed * 2.0;
+            // Move much faster when merging - alliance urgency!
+            this.speed = Math.max(this.baseSpeed * 3.0, 5.0); // At least 5.0 speed
             
-            // Visual indication of merging intent
-            if (Math.random() < 0.1) {
-                this.mesh.rotation.y += 0.2; // Wiggle effect
+            // Visual indication of merging intent - glowing effect
+            if (Math.random() < 0.2) {
+                this.mesh.scale.x = this.size / this.originalSize * (1 + Math.random() * 0.1);
+                this.mesh.scale.y = this.size / this.originalSize * (1 + Math.random() * 0.1);
+                this.mesh.scale.z = this.size / this.originalSize * (1 + Math.random() * 0.1);
+            }
+            
+            // Debug log periodically
+            if (Math.random() < 0.01) {
+                console.log(`📍 ${this.animalType} seeking partner ${this.mergePartner.animalType} - Distance: ${distance.toFixed(1)}`);
             }
         }
     }
@@ -3376,29 +3410,36 @@ function animalEatAnimal(predator, prey) {
 
 // Initiate animal alliance - animals team up against dominant player
 function initiateAnimalAlliance() {
-    if (animals.length < 2) return;
+    if (animals.length < 2) {
+        console.log('⚠️ Not enough animals for alliance');
+        return;
+    }
     
-    // Sort animals by size
+    // Sort animals by size (largest first)
     const sortedAnimals = [...animals].sort((a, b) => b.size - a.size);
+    
+    console.log(`🔍 Checking ${sortedAnimals.length} animals for alliance potential...`);
     
     // Find pairs of animals to merge
     const mergePairs = [];
     const alreadyPaired = new Set();
     
-    // Pair up the largest animals first for maximum impact
+    // More aggressive pairing - pair any animals that together could be threatening
     for (let i = 0; i < sortedAnimals.length - 1; i++) {
         if (alreadyPaired.has(sortedAnimals[i])) continue;
         
+        const animal1 = sortedAnimals[i];
+        
+        // Find best partner for this animal
         for (let j = i + 1; j < sortedAnimals.length; j++) {
             if (alreadyPaired.has(sortedAnimals[j])) continue;
             
-            const animal1 = sortedAnimals[i];
             const animal2 = sortedAnimals[j];
             
-            // Only merge if combined size would be competitive with player
-            const combinedSize = animal1.size + animal2.size * 0.7; // Not full addition to prevent instant giants
+            // More lenient merge criteria - any two that together are half player size
+            const combinedSize = animal1.size + animal2.size * 0.7;
             
-            if (combinedSize > playerControls.size * 0.7) {
+            if (combinedSize > playerControls.size * 0.5) { // Lowered threshold
                 mergePairs.push([animal1, animal2]);
                 alreadyPaired.add(animal1);
                 alreadyPaired.add(animal2);
@@ -3406,15 +3447,37 @@ function initiateAnimalAlliance() {
                 // Set their AI states to seek merging
                 animal1.aiState = 'merging';
                 animal1.mergePartner = animal2;
+                animal1.behaviorState = 'wandering'; // Reset behavior state
+                
                 animal2.aiState = 'merging';
                 animal2.mergePartner = animal1;
+                animal2.behaviorState = 'wandering'; // Reset behavior state
                 
-                // Limit to 2-3 merge pairs initially
-                if (mergePairs.length >= 2) break;
+                console.log(`💑 Pairing ${animal1.animalType} (${animal1.size.toFixed(1)}) with ${animal2.animalType} (${animal2.size.toFixed(1)}) → Combined: ${combinedSize.toFixed(1)}`);
+                
+                // Allow more pairs - up to 3-4
+                if (mergePairs.length >= 3) break;
             }
         }
         
-        if (mergePairs.length >= 2) break;
+        if (mergePairs.length >= 3) break;
+    }
+    
+    if (mergePairs.length === 0) {
+        console.log('⚠️ No suitable pairs found - animals too small');
+        // Force merge the largest animals anyway
+        if (sortedAnimals.length >= 2) {
+            const animal1 = sortedAnimals[0];
+            const animal2 = sortedAnimals[1];
+            
+            animal1.aiState = 'merging';
+            animal1.mergePartner = animal2;
+            animal2.aiState = 'merging';
+            animal2.mergePartner = animal1;
+            
+            console.log(`🔴 FORCED PAIRING: ${animal1.animalType} with ${animal2.animalType}`);
+            mergePairs.push([animal1, animal2]);
+        }
     }
     
     console.log(`🤝 ${mergePairs.length} animal pairs forming alliances to challenge you!`);
