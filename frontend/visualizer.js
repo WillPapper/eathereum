@@ -1184,8 +1184,15 @@ class TransactionAnimal {
                 // Direct movement toward partner
                 this.targetDirection = Math.atan2(moveDirection.x, moveDirection.z);
                 
-                // High speed for merging
-                this.speed = 8.0; // Fixed high speed
+                // Ultra-high speed for merging in panic mode
+                const dominanceFactor = playerControls.size / Math.max(this.size, 1);
+                if (dominanceFactor > 5) {
+                    this.speed = 15.0; // PANIC SPEED!
+                } else if (dominanceFactor > 3) {
+                    this.speed = 12.0; // Very fast
+                } else {
+                    this.speed = 8.0; // Fast
+                }
                 
                 // Visual pulse effect
                 const pulse = 1 + Math.sin(Date.now() * 0.01) * 0.1;
@@ -3429,8 +3436,20 @@ function checkDifficultyScaling() {
             console.log(`⚔️ ALLIANCE MODE ACTIVATED! You're too powerful (${(smallerRatio * 100).toFixed(1)}% smaller). Animals will team up against you!`);
             console.log(`   Player size: ${playerControls.size.toFixed(1)}, Largest animal: ${largestAnimalSize.toFixed(1)}, Total animals: ${animals.length}`);
             
-            // Start the alliance behavior
+            // Start the alliance behavior immediately and aggressively
             initiateAnimalAlliance();
+            
+            // If extremely dominant, start multiple alliance waves immediately
+            const sizeGapFactor = playerControls.size / Math.max(largestAnimalSize, 1);
+            if (sizeGapFactor > 3) {
+                setTimeout(() => initiateAnimalAlliance(), 50);
+                if (sizeGapFactor > 4) {
+                    setTimeout(() => initiateAnimalAlliance(), 100);
+                }
+                if (sizeGapFactor > 5) {
+                    setTimeout(() => initiateAnimalAlliance(), 150);
+                }
+            }
         }
     }
     // Exit alliance mode if there are now competitive animals
@@ -3548,10 +3567,10 @@ function initiateAnimalAlliance() {
     const mergePairs = [];
     const alreadyPaired = new Set();
     
-    // More aggressive pairing when player is extremely dominant
-    const maxPairs = dominanceFactor > 3 ? 6 : dominanceFactor > 2 ? 5 : dominanceFactor > 1.5 ? 4 : 3;
-    const sizeThreshold = Math.max(0.2, 0.5 / Math.sqrt(dominanceFactor)); // Much lower threshold when dominant
-    const mergeFactor = dominanceFactor > 2 ? 0.9 : 0.7; // More size contribution when desperate
+    // Ultra-aggressive pairing when player is extremely dominant
+    const maxPairs = dominanceFactor > 5 ? 10 : dominanceFactor > 4 ? 8 : dominanceFactor > 3 ? 6 : dominanceFactor > 2 ? 5 : dominanceFactor > 1.5 ? 4 : 3;
+    const sizeThreshold = dominanceFactor > 3 ? 0.1 : Math.max(0.2, 0.5 / Math.sqrt(dominanceFactor)); // Extremely low threshold in panic
+    const mergeFactor = dominanceFactor > 3 ? 1.0 : dominanceFactor > 2 ? 0.9 : 0.7; // Full size contribution in panic
     
     console.log(`🎯 Alliance aggressiveness: ${maxPairs} max pairs, ${(sizeThreshold * 100).toFixed(0)}% size threshold`);
     
@@ -3694,11 +3713,28 @@ function checkAllianceProgress() {
             }
         });
     } else if (allianceActive && animals.length > 2) {
-        // More aggressive timing based on dominance
-        const baseDelay = 3000;
-        const adjustedDelay = Math.max(500, baseDelay / aggressiveness); // Faster when more dominant
+        // Ultra-aggressive timing for extreme dominance
+        let adjustedDelay;
         
-        console.log(`⏰ Next alliance attempt in ${(adjustedDelay/1000).toFixed(1)}s (dominance: ${(smallerRatio*100).toFixed(0)}%, aggression: ${aggressiveness.toFixed(1)}x)`);
+        if (sizeGapFactor > 5) {
+            // You're 5x+ bigger than largest animal - PANIC MODE
+            adjustedDelay = 100; // Near instant merging!
+        } else if (sizeGapFactor > 4) {
+            // 4x bigger - extremely aggressive
+            adjustedDelay = 200;
+        } else if (sizeGapFactor > 3) {
+            // 3x bigger - very aggressive
+            adjustedDelay = 400;
+        } else if (sizeGapFactor > 2) {
+            // 2x bigger - aggressive
+            adjustedDelay = 800;
+        } else {
+            // Standard aggressive timing
+            const baseDelay = 3000;
+            adjustedDelay = Math.max(1000, baseDelay / aggressiveness);
+        }
+        
+        console.log(`⏰ Next alliance in ${(adjustedDelay/1000).toFixed(1)}s (${sizeGapFactor.toFixed(1)}x bigger than largest, ${(smallerRatio*100).toFixed(0)}% smaller)`);
         
         setTimeout(() => {
             if (allianceActive) {
