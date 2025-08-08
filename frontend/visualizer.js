@@ -4918,7 +4918,7 @@ function setupPlayerControls() {
     const canvas = renderer.domElement;
     
     canvas.addEventListener('click', () => {
-        if (birdControls.isFlying) {
+        if (playerControls.isPlaying) {
             canvas.requestPointerLock();
         }
     });
@@ -4928,35 +4928,70 @@ function setupPlayerControls() {
     });
     
     document.addEventListener('mousemove', (event) => {
-        if (isPointerLocked && birdControls.isFlying) {
-            birdControls.mouseX = event.movementX;
-            birdControls.mouseY = event.movementY;
+        if (isPointerLocked && playerControls.isPlaying) {
+            playerControls.mouseX = event.movementX;
+            playerControls.mouseY = event.movementY;
         }
     });
     
-    // Touch controls for mobile
+    // Touch controls for mobile (ground movement)
     let touchStartX = 0;
     let touchStartY = 0;
     
     canvas.addEventListener('touchstart', (event) => {
-        if (birdControls.isFlying) {
+        if (playerControls.isPlaying) {
             touchStartX = event.touches[0].clientX;
             touchStartY = event.touches[0].clientY;
         }
     });
     
     canvas.addEventListener('touchmove', (event) => {
-        if (birdControls.isFlying) {
+        if (playerControls.isPlaying) {
             const touchX = event.touches[0].clientX;
             const touchY = event.touches[0].clientY;
             
-            birdControls.mouseX = (touchX - touchStartX) * 0.5;
-            birdControls.mouseY = (touchY - touchStartY) * 0.5;
+            // Convert touch movement to walking direction
+            const deltaX = touchX - touchStartX;
+            const deltaY = touchY - touchStartY;
             
-            touchStartX = touchX;
-            touchStartY = touchY;
+            // Map touch to movement keys
+            if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                // Horizontal movement
+                if (deltaX > 20) {
+                    playerControls.moveRight = true;
+                    playerControls.moveLeft = false;
+                } else if (deltaX < -20) {
+                    playerControls.moveLeft = true;
+                    playerControls.moveRight = false;
+                }
+            } else {
+                // Vertical movement
+                if (deltaY < -20) {
+                    playerControls.moveForward = true;
+                    playerControls.moveBackward = false;
+                } else if (deltaY > 20) {
+                    playerControls.moveBackward = true;
+                    playerControls.moveForward = false;
+                }
+            }
+            
+            // Camera rotation with smaller swipes
+            playerControls.mouseX = deltaX * 0.1;
+            playerControls.mouseY = deltaY * 0.1;
             
             event.preventDefault();
+        }
+    });
+    
+    canvas.addEventListener('touchend', (event) => {
+        if (playerControls.isPlaying) {
+            // Stop movement when touch ends
+            playerControls.moveForward = false;
+            playerControls.moveBackward = false;
+            playerControls.moveLeft = false;
+            playerControls.moveRight = false;
+            playerControls.mouseX = 0;
+            playerControls.mouseY = 0;
         }
     });
 }
