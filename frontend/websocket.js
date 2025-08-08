@@ -251,19 +251,8 @@ class WebSocketManager extends EventTarget {
             const hostname = window.location.hostname;
             let gameServerHost;
             
-            if (hostname.includes('-pr-')) {
-                // Preview environment - extract PR number and construct game server URL
-                const prMatch = hostname.match(/-pr-(\d+)/);
-                if (prMatch) {
-                    gameServerHost = `game-server-pr-${prMatch[1]}.onrender.com`;
-                } else {
-                    // Fallback to production if PR number extraction fails
-                    gameServerHost = 'game-server-i4ne.onrender.com';
-                }
-            } else {
-                // Production environment
-                gameServerHost = 'game-server-i4ne.onrender.com';
-            }
+            // Always use production game server since preview is broken
+            gameServerHost = 'game-server-i4ne.onrender.com';
             
             wsUrl = `wss://${gameServerHost}${this.config.wsEndpoint}`;
         }

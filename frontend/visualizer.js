@@ -1353,8 +1353,8 @@ class TransactionAnimal {
     createFloatingIcon(iconType, iconColor, backgroundColor) {
         const iconGroup = new THREE.Group();
         
-        // Background circle
-        const bgGeometry = new THREE.CircleGeometry(1.2, 12);
+        // Background circle - increased size for larger text
+        const bgGeometry = new THREE.CircleGeometry(2, 16);
         const bgMaterial = new THREE.MeshBasicMaterial({
             color: backgroundColor,
             transparent: true,
@@ -1363,19 +1363,50 @@ class TransactionAnimal {
         const background = new THREE.Mesh(bgGeometry, bgMaterial);
         iconGroup.add(background);
         
-        // Icon symbol based on type
-        const iconGeometry = this.getIconGeometry(iconType);
-        const iconMaterial = new THREE.MeshBasicMaterial({
-            color: iconColor,
-            transparent: true,
-            opacity: 1.0
-        });
-        const icon = new THREE.Mesh(iconGeometry, iconMaterial);
-        icon.position.z = 0.01; // Slightly in front of background
-        iconGroup.add(icon);
+        // Create text showing dollar amount
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 512;
+        canvas.height = 512;
         
-        // Add border for better visibility
-        const borderGeometry = new THREE.RingGeometry(1.2, 1.4, 12);
+        // Clear canvas
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Format amount as currency
+        let displayAmount = '';
+        if (this.amount >= 1000000) {
+            displayAmount = `$${(this.amount / 1000000).toFixed(1)}M`;
+        } else if (this.amount >= 1000) {
+            displayAmount = `$${(this.amount / 1000).toFixed(1)}K`;
+        } else {
+            displayAmount = `$${this.amount.toFixed(0)}`;
+        }
+        
+        // Draw text - 25% larger (175px)
+        context.font = 'bold 175px Arial';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillStyle = iconColor === 0xFFFFFF ? 'white' : 'black';
+        context.fillText(displayAmount, 256, 256);
+        
+        // Create texture from canvas
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+        
+        // Create text mesh - increased size
+        const textGeometry = new THREE.PlaneGeometry(3, 3);
+        const textMaterial = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            opacity: 1.0,
+            side: THREE.DoubleSide
+        });
+        const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+        textMesh.position.z = 0.01; // Slightly in front of background
+        iconGroup.add(textMesh);
+        
+        // Add border for better visibility - increased size to match larger background
+        const borderGeometry = new THREE.RingGeometry(1.9, 2.1, 16);
         const borderMaterial = new THREE.MeshBasicMaterial({
             color: 0x000000,
             transparent: true,
@@ -1384,121 +1415,40 @@ class TransactionAnimal {
         const border = new THREE.Mesh(borderGeometry, borderMaterial);
         iconGroup.add(border);
         
-        iconGroup.userData = { iconType, iconColor, backgroundColor };
+        iconGroup.userData = { iconType, iconColor, backgroundColor, amount: this.amount };
         return iconGroup;
     }
     
-    // Get geometry for different icon types
-    getIconGeometry(iconType) {
-        switch (iconType) {
-            case 'edible':
-                // Fork and knife or plus symbol for edible
-                return this.createPlusIconGeometry();
-            case 'danger':
-                // Skull or X symbol for danger
-                return this.createXIconGeometry();
-            case 'equal':
-                // Circle symbol for equal size (will bounce)
-                return this.createCircleIconGeometry();
-            case 'neutral':
-            default:
-                // Equals or dash symbol for neutral
-                return this.createEqualsIconGeometry();
-        }
-    }
-    
-    // Create plus icon geometry (edible)
-    createPlusIconGeometry() {
-        const shape = new THREE.Shape();
-        // Vertical bar
-        shape.moveTo(-0.2, -0.8);
-        shape.lineTo(0.2, -0.8);
-        shape.lineTo(0.2, 0.8);
-        shape.lineTo(-0.2, 0.8);
-        shape.lineTo(-0.2, -0.8);
-        // Horizontal bar
-        shape.moveTo(-0.8, -0.2);
-        shape.lineTo(0.8, -0.2);
-        shape.lineTo(0.8, 0.2);
-        shape.lineTo(-0.8, 0.2);
-        shape.lineTo(-0.8, -0.2);
-        
-        return new THREE.ShapeGeometry(shape);
-    }
-    
-    // Create X icon geometry (danger)
-    createXIconGeometry() {
-        const shape = new THREE.Shape();
-        // Create X shape with two diagonal rectangles
-        const width = 0.3;
-        const length = 1.2;
-        
-        // First diagonal
-        shape.moveTo(-width/2, -length/2);
-        shape.lineTo(width/2, -length/2);
-        shape.lineTo(length/2, -width/2);
-        shape.lineTo(length/2, width/2);
-        shape.lineTo(width/2, length/2);
-        shape.lineTo(-width/2, length/2);
-        shape.lineTo(-length/2, width/2);
-        shape.lineTo(-length/2, -width/2);
-        shape.lineTo(-width/2, -length/2);
-        
-        return new THREE.ShapeGeometry(shape);
-    }
-    
-    // Create equals icon geometry (neutral)
-    createEqualsIconGeometry() {
-        const shape = new THREE.Shape();
-        // Top bar
-        shape.moveTo(-0.6, 0.2);
-        shape.lineTo(0.6, 0.2);
-        shape.lineTo(0.6, 0.4);
-        shape.lineTo(-0.6, 0.4);
-        shape.lineTo(-0.6, 0.2);
-        // Bottom bar
-        shape.moveTo(-0.6, -0.4);
-        shape.lineTo(0.6, -0.4);
-        shape.lineTo(0.6, -0.2);
-        shape.lineTo(-0.6, -0.2);
-        shape.lineTo(-0.6, -0.4);
-        
-        return new THREE.ShapeGeometry(shape);
-    }
-    
-    // Create circle icon geometry (equal size - will bounce)
-    createCircleIconGeometry() {
-        // Create a ring/circle outline
-        const outerRadius = 0.7;
-        const innerRadius = 0.5;
-        const segments = 16;
-        
-        const geometry = new THREE.RingGeometry(innerRadius, outerRadius, segments);
-        return geometry;
-    }
+    // Icon geometry functions no longer needed - replaced with dollar amount text
     
     // Update existing floating icon
     updateFloatingIcon(indicator, iconType, iconColor, backgroundColor) {
-        if (indicator.userData.iconType !== iconType) {
-            // Type changed, recreate icon
+        if (indicator.userData.iconType !== iconType || indicator.userData.amount !== this.amount) {
+            // Type or amount changed, recreate icon
             const newIcon = this.createFloatingIcon(iconType, iconColor, backgroundColor);
             const position = indicator.position.clone();
             const scale = indicator.scale.clone();
             
             this.mesh.remove(indicator);
-            if (indicator.geometry) indicator.geometry.dispose();
-            if (indicator.material) indicator.material.dispose();
+            // Dispose of all parts of the indicator
+            indicator.traverse((child) => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (child.material.map) child.material.map.dispose();
+                    child.material.dispose();
+                }
+            });
             
             this.indicator = newIcon;
             this.indicator.position.copy(position);
             this.indicator.scale.copy(scale);
             this.mesh.add(this.indicator);
         } else {
-            // Same type, just update colors if needed
+            // Same type and amount, just update colors if needed
             const background = indicator.children[0];
-            const icon = indicator.children[1];
+            const textMesh = indicator.children[1];
             if (background) background.material.color.set(backgroundColor);
-            if (icon) icon.material.color.set(iconColor);
+            // Text color is handled by the texture, no need to update here
         }
     }
     
