@@ -73,8 +73,7 @@ const size = Math.log10(amount + 1) * 0.5 + 0.5;
 // Local development
 ws://localhost:8080/ws
 
-// Production
-wss://game-server.onrender.com/ws
+// Production - configured in websocket.js
 ```
 
 ### Game Settings
