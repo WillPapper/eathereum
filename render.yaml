@@ -1,7 +1,8 @@
 services:
-  # Static site for frontend
+  # Static site for frontend (Eathereum)
   - type: web
-    name: stablecoin-visualizer-frontend
+    name: eathereum
+    serviceId: srv-d2akd6h5pdvs73btasgg
     runtime: static
     buildCommand: "" # No build needed for static files
     staticPublishPath: ./frontend
@@ -9,7 +10,75 @@ services:
       - path: /*
         name: X-Content-Type-Options
         value: nosniff
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=3600
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
+    autoDeploy: true
+    branch: main
+
+  # Game Server - Rust web service with WebSocket and Redis consumer
+  - type: web
+    name: game-server
+    serviceId: srv-d2ajnhruibrs73enuksg
+    runtime: rust
+    rootDir: game-server
+    buildCommand: cargo build --release
+    startCommand: ./target/release/game-server
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: stablecoin-kv
+          property: connectionString
+      - key: REDIS_STREAM_KEY
+        value: stablecoin:transactions
+      - key: CONSUMER_GROUP
+        value: websocket-publisher
+      - key: PORT
+        value: 8080
+      - key: HEALTH_PORT
+        value: 8081
+      - key: RUST_LOG
+        value: info
+    healthCheckPath: /health
+    autoDeploy: true
+    branch: main
+    pullRequestPreviewsEnabled: true
+
+  # Block Monitor - Background worker that monitors blockchain
+  - type: worker
+    name: block-monitor
+    serviceId: srv-d2aik8ripnbc739ecse0
+    runtime: rust
+    rootDir: block-monitor
+    buildCommand: cargo build --release
+    startCommand: ./target/release/block-monitor
+    envVars:
+      - key: RPC_URL
+        sync: true  # Synced across environments
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: stablecoin-kv
+          property: connectionString
+      - key: PORT
+        value: 8080
+      - key: HEALTH_PORT
+        value: 8081
+      - key: RUST_LOG
+        value: info
+    autoDeploy: true
+    branch: main
+    pullRequestPreviewsEnabled: true
+
+# Redis KV store for transaction streaming
+databases:
+  - name: stablecoin-kv
+    databaseId: red-d2aiqmeuk2gs73a4pib0
+    type: redis
+    plan: starter  # Free tier
+    region: oregon
