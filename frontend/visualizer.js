@@ -1729,14 +1729,16 @@ function updatePlayerMovement(delta) {
         const magnitude = playerControls.mobileMovement.magnitude;
         
         if (magnitude > 0) {
-            // Calculate movement in world space relative to camera orientation
-            // Convert touch angle to movement direction
-            const touchForward = Math.cos(angle);
-            const touchRight = Math.sin(angle);
+            // Calculate movement direction from touch input
+            // angle: 0 = right, PI/2 = up, PI = left, -PI/2 = down
+            const touchX = Math.cos(angle) * magnitude;
+            const touchY = Math.sin(angle) * magnitude;
             
-            // Apply movement relative to camera view
-            moveVector.add(forward.clone().multiplyScalar(-touchRight * magnitude));
-            moveVector.add(right.clone().multiplyScalar(touchForward * magnitude));
+            // Map touch input to world movement relative to camera
+            // touchX positive = drag right = move right
+            // touchY positive = drag up = move forward
+            moveVector.add(right.clone().multiplyScalar(touchX));
+            moveVector.add(forward.clone().multiplyScalar(touchY));
         }
     } else {
         // Desktop: Use traditional 4-direction keyboard/touch movement
@@ -5259,43 +5261,6 @@ function setupPlayerControls() {
             magnitude: 0
         };
         
-        // Create visual joystick indicator for mobile
-        const joystickContainer = document.createElement('div');
-        joystickContainer.id = 'touch-joystick';
-        joystickContainer.style.cssText = `
-            position: fixed;
-            width: 120px;
-            height: 120px;
-            border: 3px solid rgba(0, 255, 200, 0.3);
-            border-radius: 50%;
-            background: rgba(0, 0, 0, 0.2);
-            display: none;
-            pointer-events: none;
-            z-index: 1000;
-        `;
-        
-        const joystickKnob = document.createElement('div');
-        joystickKnob.id = 'touch-joystick-knob';
-        joystickKnob.style.cssText = `
-            position: absolute;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: rgba(0, 255, 200, 0.6);
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            transition: none;
-        `;
-        
-        joystickContainer.appendChild(joystickKnob);
-        document.body.appendChild(joystickContainer);
-        
-        playerControls.joystickElements = {
-            container: joystickContainer,
-            knob: joystickKnob
-        };
-        
         // Log detection result for debugging
         const deviceInfo = browser.getResult();
         console.log(`Mobile device detected: ${deviceInfo.platform.vendor} ${deviceInfo.os.name} - enabling omnidirectional movement`);
@@ -5311,17 +5276,6 @@ function setupPlayerControls() {
             
             if (isMobile) {
                 playerControls.mobileMovement.active = true;
-                
-                // Show joystick at touch position
-                if (playerControls.joystickElements) {
-                    const joystick = playerControls.joystickElements.container;
-                    joystick.style.left = (touchStartX - 60) + 'px';
-                    joystick.style.top = (touchStartY - 60) + 'px';
-                    joystick.style.display = 'block';
-                    
-                    // Reset knob position
-                    playerControls.joystickElements.knob.style.transform = 'translate(-50%, -50%)';
-                }
             }
         }
     });
@@ -5340,27 +5294,15 @@ function setupPlayerControls() {
                 const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
                 
                 if (distance > 10) { // Minimum distance threshold
-                    // Calculate angle in radians (0 = right, PI/2 = up, PI = left, -PI/2 = down)
+                    // Calculate angle in radians
+                    // Note: deltaY is negated because screen Y increases downward
                     playerControls.mobileMovement.angle = Math.atan2(-deltaY, deltaX);
                     // Normalize magnitude (cap at 100 pixels distance)
                     const cappedDistance = Math.min(distance, 100);
                     playerControls.mobileMovement.magnitude = cappedDistance / 100;
                     playerControls.mobileMovement.active = true;
-                    
-                    // Update joystick knob position
-                    if (playerControls.joystickElements) {
-                        const knobX = (deltaX / distance) * Math.min(distance, 40);
-                        const knobY = (deltaY / distance) * Math.min(distance, 40);
-                        playerControls.joystickElements.knob.style.transform = 
-                            `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
-                    }
                 } else {
                     playerControls.mobileMovement.magnitude = 0;
-                    
-                    // Reset knob to center
-                    if (playerControls.joystickElements) {
-                        playerControls.joystickElements.knob.style.transform = 'translate(-50%, -50%)';
-                    }
                 }
             } else {
                 // Desktop touch (touchscreen laptops): Keep 4-direction movement
@@ -5399,12 +5341,6 @@ function setupPlayerControls() {
                 // Mobile: Stop omnidirectional movement
                 playerControls.mobileMovement.active = false;
                 playerControls.mobileMovement.magnitude = 0;
-                
-                // Hide joystick
-                if (playerControls.joystickElements) {
-                    playerControls.joystickElements.container.style.display = 'none';
-                    playerControls.joystickElements.knob.style.transform = 'translate(-50%, -50%)';
-                }
             } else {
                 // Desktop touch: Stop 4-direction movement
                 playerControls.moveForward = false;
