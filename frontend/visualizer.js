@@ -1382,8 +1382,8 @@ class TransactionAnimal {
             displayAmount = `$${this.amount.toFixed(0)}`;
         }
         
-        // Draw text - much larger font size
-        context.font = 'bold 140px Arial';
+        // Draw text - 25% larger (175px)
+        context.font = 'bold 175px Arial';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillStyle = iconColor === 0xFFFFFF ? 'white' : 'black';
