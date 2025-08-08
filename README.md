@@ -1,16 +1,14 @@
-# Stablecoin Visualizer 🌳
+# Eathereum 🌳
 
-A real-time, interactive 3D visualization of stablecoin transactions on the Base network, presented as a living ecosystem where transactions become creatures in a vibrant garden.
+A competitive PVP game where you consume smaller stablecoin transfers and avoid larger ones, fighting to grow wealthier before getting eaten in a ruthless world of digital currency.
 
 ## Overview
 
-The Stablecoin Visualizer transforms blockchain data into an intuitive, gamified experience. Every stablecoin transaction (USDC, USDT, DAI) on Base becomes an animal in a 3D garden, with size representing transaction value. Players can explore this ecosystem, interact with the transactions, and experience the flow of digital currency through gameplay.
+Eathereum is a real-time multiplayer survival game where every stablecoin transaction (USDC, USDT, DAI) on the Base network becomes a living creature. You control an animal in this blockchain ecosystem, consuming smaller transactions to grow your wealth while avoiding larger predators that would devour you. It's eat or be eaten in this competitive world where size equals value and only the strongest survive.
 
 ## Goal
 
-To make blockchain activity accessible and engaging by visualizing real-time stablecoin transactions in an intuitive way, inspired by the early Bitcoin visualizers from the 2010s that helped people understand cryptocurrency through visual metaphors. 
-
-Where those early visualizers showed Bitcoin as abstract blocks or nodes, we've evolved the concept into a living, breathing ecosystem that anyone can understand: bigger transactions are bigger animals, and the constant flow of stablecoins creates a dynamic garden that reflects real economic activity on Base.
+To transform blockchain activity into an addictive competitive experience, inspired by visualizers like Bitlisten that make cryptocurrency transactions tangible. While Bitlisten turns Bitcoin transactions into musical notes, Eathereum evolves the concept into a brutal PVP arena where players directly compete with real-time stablecoin flows. Every transaction is an opportunity or a threat, creating a visceral understanding of DeFi activity through survival gameplay.
 
 ## Architecture
 
@@ -92,13 +90,14 @@ Where those early visualizers showed Bitcoin as abstract blocks or nodes, we've 
   - Mobile-optimized touch controls
 
 **Game Mechanics**
-- **Player**: A creature that grows by consuming smaller transactions
+- **PVP Competition**: Every player fights for dominance in the same arena
+- **Survival Gameplay**: Consume smaller transactions to grow, avoid larger ones or die
 - **Animals**: Each represents a real stablecoin transaction
-  - Size correlates to transaction amount (logarithmic scale)
-  - Color indicates stablecoin type (USDC=blue, USDT=green, DAI=gold)
-  - Movement patterns create natural ecosystem behavior
-- **Environment**: Dynamic garden that grows with large transactions
-- **Power-ups**: Special fruits that grant temporary abilities
+  - Size = transaction value (bigger = more dangerous)
+  - Color = stablecoin type (USDC=blue, USDT=green, DAI=gold)
+  - AI-controlled with predatory behavior patterns
+- **Growth System**: Your size is your score - eat to grow wealthy or be eaten
+- **Power-ups**: Rare fruits grant temporary advantages in the fight for survival
 
 ### Data Flow
 
@@ -124,16 +123,17 @@ Where those early visualizers showed Bitcoin as abstract blocks or nodes, we've 
 
 ## Features
 
-### Real-time Visualization
-- Live stablecoin transactions appear as creatures
-- Transaction amount determines creature size
-- Smooth animations and physics simulation
+### Competitive Gameplay
+- **Real-time PVP**: Compete against other players in live matches
+- **Survival mechanics**: Eat smaller transactions or be eaten by larger ones
+- **Wealth accumulation**: Your size represents your accumulated wealth
+- **Leaderboard system**: Track the wealthiest survivors
 
-### Interactive Gameplay
-- Control a player creature in the ecosystem
-- Grow by consuming smaller transactions
-- Avoid larger predators
-- Collect power-ups for special abilities
+### Strategic Elements
+- **Risk vs Reward**: Chase valuable transactions while avoiding threats
+- **Power-up control**: Leverage fruits double your size, speedrun fruits double your speed
+- **Alliance dynamics**: Smaller creatures team up against dominant predators
+- **Market awareness**: React to real stablecoin flow patterns on Base
 
 ### Trading Feed UI
 - Live transaction ticker showing incoming transfers
@@ -148,22 +148,13 @@ Where those early visualizers showed Bitcoin as abstract blocks or nodes, we've 
 
 ## Design Philosophy
 
-The visualizer embraces natural metaphors to make blockchain data intuitive:
-- **Size = Value**: Larger transactions are bigger animals
-- **Movement = Activity**: Constant motion reflects market dynamics
-- **Ecosystem = Economy**: The garden represents the Base network
-- **Interaction = Understanding**: Playing helps users grasp transaction flow
+Eathereum weaponizes blockchain data into competitive gameplay:
+- **Size = Power**: Transaction value directly translates to predatory dominance
+- **Survival of the Richest**: Only the most strategic players accumulate wealth
+- **Real Stakes**: Every creature represents actual money flowing through Base
+- **Brutal Simplicity**: Eat or be eaten - no complex rules, just pure competition
 
-By gamifying blockchain data, we transform abstract financial activity into something tangible and engaging, making DeFi accessible to everyone.
-
-## Inspiration
-
-This project draws inspiration from the pioneering Bitcoin visualizers of the early 2010s, such as:
-- Bitcoin.com's transaction visualizer
-- Blockchain.info's globe visualization
-- BitBonkers' 3D block visualization
-
-We've evolved these concepts for the modern DeFi era, focusing on stablecoins as the backbone of everyday blockchain transactions, and adding interactivity to create a more engaging educational experience.
+By turning DeFi activity into a PVP arena, players viscerally understand market dynamics through the universal language of survival.
 
 ## License
 
