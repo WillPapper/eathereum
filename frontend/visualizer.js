@@ -1296,7 +1296,14 @@ class TransactionAnimal {
         
         // Determine threat level and icon type
         let iconType, iconColor, backgroundColor;
-        if (this.size < playerControls.size * 1.2) {
+        const sizeRatio = this.size / playerControls.size;
+        
+        if (sizeRatio >= 0.95 && sizeRatio <= 1.05) {
+            // Equal size - white with circle icon (will bounce)
+            iconType = 'equal';
+            iconColor = 0x000000; // Black icon on white background
+            backgroundColor = 0xFFFFFF; // White background
+        } else if (this.size < playerControls.size * 1.2) {
             // Edible - green with food icon (changed from 0.8 to 1.2)
             iconType = 'edible';
             iconColor = 0xFFFFFF;
@@ -1380,6 +1387,9 @@ class TransactionAnimal {
             case 'danger':
                 // Skull or X symbol for danger
                 return this.createXIconGeometry();
+            case 'equal':
+                // Circle symbol for equal size (will bounce)
+                return this.createCircleIconGeometry();
             case 'neutral':
             default:
                 // Equals or dash symbol for neutral
@@ -1444,6 +1454,17 @@ class TransactionAnimal {
         shape.lineTo(-0.6, -0.4);
         
         return new THREE.ShapeGeometry(shape);
+    }
+    
+    // Create circle icon geometry (equal size - will bounce)
+    createCircleIconGeometry() {
+        // Create a ring/circle outline
+        const outerRadius = 0.7;
+        const innerRadius = 0.5;
+        const segments = 16;
+        
+        const geometry = new THREE.RingGeometry(innerRadius, outerRadius, segments);
+        return geometry;
     }
     
     // Update existing floating icon
