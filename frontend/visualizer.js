@@ -4526,8 +4526,8 @@ function updateFieldAnimals() {
     // Clear and rebuild
     fieldEl.innerHTML = '';
     
-    // Sort animals by size (largest first)
-    const sortedAnimals = [...animals].sort((a, b) => b.size - a.size);
+    // Sort animals by amount (largest first)
+    const sortedAnimals = [...animals].sort((a, b) => b.amount - a.amount);
     
     // Show top 10 animals
     sortedAnimals.slice(0, 10).forEach(animal => {
@@ -4535,7 +4535,7 @@ function updateFieldAnimals() {
         animalDiv.className = 'field-animal';
         
         const emoji = getAnimalEmoji(animal.animalType);
-        const sizeStr = animal.size.toFixed(1);
+        const amount = animal.amount || 0;
         const coin = animal.stablecoin || 'USDC';
         
         animalDiv.innerHTML = `
@@ -4543,7 +4543,7 @@ function updateFieldAnimals() {
                 <span class="animal-icon">${emoji}</span>
                 <span class="tx-coin ${coin.toLowerCase()}">${coin}</span>
             </span>
-            <span class="animal-size">Size: ${sizeStr}</span>
+            <span class="animal-size">$${formatNumber(amount)}</span>
         `;
         
         fieldEl.appendChild(animalDiv);
