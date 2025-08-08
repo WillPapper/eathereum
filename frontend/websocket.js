@@ -245,8 +245,27 @@ class WebSocketManager extends EventTarget {
             // Local development
             wsUrl = `ws://localhost:8080${this.config.wsEndpoint}`;
         } else {
-            // Production - use the game server on Render
-            wsUrl = `wss://game-server-i4ne.onrender.com${this.config.wsEndpoint}`;
+            // Dynamic URL based on current environment
+            // For preview deployments: eathereum-pr-XX.onrender.com -> game-server-pr-XX.onrender.com
+            // For production: eathereum.onrender.com -> game-server.onrender.com
+            const hostname = window.location.hostname;
+            let gameServerHost;
+            
+            if (hostname.includes('-pr-')) {
+                // Preview environment - extract PR number and construct game server URL
+                const prMatch = hostname.match(/-pr-(\d+)/);
+                if (prMatch) {
+                    gameServerHost = `game-server-pr-${prMatch[1]}.onrender.com`;
+                } else {
+                    // Fallback to production if PR number extraction fails
+                    gameServerHost = 'game-server-i4ne.onrender.com';
+                }
+            } else {
+                // Production environment
+                gameServerHost = 'game-server-i4ne.onrender.com';
+            }
+            
+            wsUrl = `wss://${gameServerHost}${this.config.wsEndpoint}`;
         }
         
         console.log(`Connecting to WebSocket: ${wsUrl}`);
