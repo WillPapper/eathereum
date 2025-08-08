@@ -1353,8 +1353,8 @@ class TransactionAnimal {
     createFloatingIcon(iconType, iconColor, backgroundColor) {
         const iconGroup = new THREE.Group();
         
-        // Background circle
-        const bgGeometry = new THREE.CircleGeometry(1.2, 12);
+        // Background circle - increased size for larger text
+        const bgGeometry = new THREE.CircleGeometry(2, 16);
         const bgMaterial = new THREE.MeshBasicMaterial({
             color: backgroundColor,
             transparent: true,
@@ -1366,8 +1366,8 @@ class TransactionAnimal {
         // Create text showing dollar amount
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
-        canvas.width = 256;
-        canvas.height = 256;
+        canvas.width = 512;
+        canvas.height = 512;
         
         // Clear canvas
         context.clearRect(0, 0, canvas.width, canvas.height);
@@ -1382,19 +1382,19 @@ class TransactionAnimal {
             displayAmount = `$${this.amount.toFixed(0)}`;
         }
         
-        // Draw text
-        context.font = 'bold 72px Arial';
+        // Draw text - much larger font size
+        context.font = 'bold 140px Arial';
         context.textAlign = 'center';
         context.textBaseline = 'middle';
         context.fillStyle = iconColor === 0xFFFFFF ? 'white' : 'black';
-        context.fillText(displayAmount, 128, 128);
+        context.fillText(displayAmount, 256, 256);
         
         // Create texture from canvas
         const texture = new THREE.CanvasTexture(canvas);
         texture.needsUpdate = true;
         
-        // Create text mesh
-        const textGeometry = new THREE.PlaneGeometry(2, 2);
+        // Create text mesh - increased size
+        const textGeometry = new THREE.PlaneGeometry(3, 3);
         const textMaterial = new THREE.MeshBasicMaterial({
             map: texture,
             transparent: true,
@@ -1405,8 +1405,8 @@ class TransactionAnimal {
         textMesh.position.z = 0.01; // Slightly in front of background
         iconGroup.add(textMesh);
         
-        // Add border for better visibility
-        const borderGeometry = new THREE.RingGeometry(1.2, 1.4, 12);
+        // Add border for better visibility - increased size to match larger background
+        const borderGeometry = new THREE.RingGeometry(1.9, 2.1, 16);
         const borderMaterial = new THREE.MeshBasicMaterial({
             color: 0x000000,
             transparent: true,
