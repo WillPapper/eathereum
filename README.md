@@ -1,6 +1,10 @@
+<div align="center">
+  <img src="frontend/img/eathereum-logo.png" alt="Eathereum Logo" width="300" />
+</div>
+
 # Eathereum 🌳
 
-A PvE game where you consume smaller stablecoin transfers and avoid larger ones to grow before getting eaten.
+**A PvE game where you consume smaller stablecoin transfers and avoid larger ones to grow before getting eaten.**
 
 ## Overview
 
