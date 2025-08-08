@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     info!("Starting Game Server");
-    
+
     let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string());
     let port = std::env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())
@@ -38,18 +38,21 @@ async fn main() -> Result<()> {
     let health_port = std::env::var("HEALTH_PORT")
         .unwrap_or_else(|_| "8081".to_string())
         .parse::<u16>()?;
-    
+
     info!("Configuration:");
-    info!("  Redis URL: {}", if redis_url.contains("@") {
-        let parts: Vec<&str> = redis_url.split('@').collect();
-        if parts.len() > 1 {
-            format!("redis://***@{}", parts[1])
+    info!(
+        "  Redis URL: {}",
+        if redis_url.contains("@") {
+            let parts: Vec<&str> = redis_url.split('@').collect();
+            if parts.len() > 1 {
+                format!("redis://***@{}", parts[1])
+            } else {
+                "redis://***".to_string()
+            }
         } else {
-            "redis://***".to_string()
+            redis_url.clone()
         }
-    } else {
-        redis_url.clone()
-    });
+    );
     info!("  Stream Key: stablecoin:transactions");
     info!("  WebSocket Port: {}", port);
     info!("  Health Port: {}", health_port);
@@ -67,7 +70,7 @@ async fn main() -> Result<()> {
             return Err(e.into());
         }
     };
-    
+
     let redis_conn = match redis_client.get_multiplexed_tokio_connection().await {
         Ok(conn) => {
             info!("✅ Connected to Redis successfully");
@@ -117,7 +120,7 @@ async fn consume_redis_stream(mut conn: MultiplexedConnection, clients: Clients)
         std::env::var("CONSUMER_GROUP").unwrap_or_else(|_| "websocket-publisher".to_string());
     let consumer_name = std::env::var("CONSUMER_NAME")
         .unwrap_or_else(|_| format!("consumer-{}", uuid::Uuid::new_v4()));
-    
+
     info!("Starting Redis stream consumer:");
     info!("  Stream: {}", stream_key);
     info!("  Consumer Group: {}", consumer_group);
@@ -135,7 +138,7 @@ async fn consume_redis_stream(mut conn: MultiplexedConnection, clients: Clients)
                 Err(e)
             }
         });
-    
+
     info!("Consumer group ready, starting to consume messages...");
 
     let last_id = ">".to_string();
@@ -158,11 +161,11 @@ async fn consume_redis_stream(mut conn: MultiplexedConnection, clients: Clients)
                 if message_count > 0 {
                     info!("📦 Received {} messages from Redis stream", message_count);
                 }
-                
+
                 for stream_key_data in reply.keys {
                     for stream_id in stream_key_data.ids {
                         info!("Processing message ID: {}", stream_id.id);
-                        
+
                         // Log raw data for debugging
                         for (key, value) in &stream_id.map {
                             match value {
@@ -174,17 +177,18 @@ async fn consume_redis_stream(mut conn: MultiplexedConnection, clients: Clients)
                                 _ => info!("  {}: {:?}", key, value),
                             }
                         }
-                        
+
                         if let Some(data) = parse_stream_data(&stream_id.map) {
                             total_messages += 1;
-                            info!("✅ Transaction #{}: {} ${} from {} to {}", 
+                            info!(
+                                "✅ Transaction #{}: {} ${} from {} to {}",
                                 total_messages,
-                                data.stablecoin, 
+                                data.stablecoin,
                                 data.amount,
                                 &data.from[..10],
                                 &data.to[..10]
                             );
-                            
+
                             let client_count = clients.read().await.len();
                             info!("Broadcasting to {} connected clients", client_count);
                             broadcast_to_clients(&clients, &data).await;
@@ -197,11 +201,12 @@ async fn consume_redis_stream(mut conn: MultiplexedConnection, clients: Clients)
                         }
                     }
                 }
-                
+
                 // Log statistics every 30 seconds
                 if last_log_time.elapsed().as_secs() > 30 {
-                    info!("📊 Statistics: {} total messages processed, {} clients connected", 
-                        total_messages, 
+                    info!(
+                        "📊 Statistics: {} total messages processed, {} clients connected",
+                        total_messages,
                         clients.read().await.len()
                     );
                     last_log_time = std::time::Instant::now();
@@ -242,7 +247,7 @@ fn parse_stream_data(data: &HashMap<String, redis::Value>) -> Option<Transaction
         amount: get_string("amount")?,
         from: get_string("from")?,
         to: get_string("to")?,
-        block_number: get_u64("block")?,  // Block-monitor sends "block", not "block_number"
+        block_number: get_u64("block")?, // Block-monitor sends "block", not "block_number"
         tx_hash: get_string("tx_hash")?,
     })
 }
@@ -287,14 +292,17 @@ async fn client_connected(ws: WebSocket, clients: Clients) {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
     let client_id = uuid::Uuid::new_v4().to_string();
-    
+
     let client_count = {
         let mut clients_guard = clients.write().await;
         clients_guard.insert(client_id.clone(), tx);
         clients_guard.len()
     };
-    
-    info!("🔌 Client {} connected (total clients: {})", client_id, client_count);
+
+    info!(
+        "🔌 Client {} connected (total clients: {})",
+        client_id, client_count
+    );
 
     tokio::spawn(async move {
         while let Some(message) = rx.recv().await {
@@ -311,7 +319,10 @@ async fn client_connected(ws: WebSocket, clients: Clients) {
         clients_guard.remove(&client_id);
         clients_guard.len()
     };
-    info!("🔌 Client {} disconnected (remaining clients: {})", client_id, client_count);
+    info!(
+        "🔌 Client {} disconnected (remaining clients: {})",
+        client_id, client_count
+    );
 }
 
 async fn start_health_server(port: u16) {
