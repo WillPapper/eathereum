@@ -5078,9 +5078,32 @@ function setupEventListeners() {
 // Setup player ground controls
 function setupPlayerControls() {
     let isPointerLocked = false;
+    let gameStarted = false;
+    
+    // Start game on any key press or click
+    const startGameOnInteraction = (event) => {
+        if (!gameStarted && !playerControls.isPlaying && !gameOver) {
+            // Don't start on Escape key or if clicking UI buttons
+            if (event.type === 'keydown' && event.code === 'Escape') {
+                return;
+            }
+            if (event.type === 'click' && event.target.tagName === 'BUTTON') {
+                return;
+            }
+            gameStarted = true;
+            toggleGameMode();
+        }
+    };
+    
+    // Add listeners for starting the game
+    document.addEventListener('keydown', startGameOnInteraction);
+    document.addEventListener('click', startGameOnInteraction);
     
     // Keyboard controls
     document.addEventListener('keydown', (event) => {
+        // Handle movement controls only if playing
+        if (!playerControls.isPlaying) return;
+        
         switch(event.code) {
             case 'KeyW':
             case 'ArrowUp':
