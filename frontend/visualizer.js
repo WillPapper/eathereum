@@ -4730,51 +4730,6 @@ function animate(currentTime) {
     renderer.render(scene, camera);
 }
 
-// Removed old bird collision function
-/* Old checkBirdCollisions removed - now using checkCollisions for ground-based player */
-
-function checkBirdCollisions_REMOVED() {
-    if (gameState.isGameOver) return;
-    
-    const birdPosition = camera.position;
-    const collisionRadius = 3; // Bird collision radius
-    
-    // Check plant collisions (game over condition)
-    for (let plant of particles) {
-        const distance = birdPosition.distanceTo(plant.mesh.position);
-        const plantCollisionRadius = plant.isFullyGrown ? plant.targetHeight * 0.5 : 0;
-        
-        if (distance < collisionRadius + plantCollisionRadius) {
-            // Skip collision - plants are no longer deadly
-            // They're just decorative now
-            return;
-        }
-    }
-    
-    // Check animal collisions (collect money)
-    animals.forEach(animal => {
-        if (!animal.isAlive) return;
-        
-        const distance = birdPosition.distanceTo(animal.mesh.position);
-        
-        // Check if bird collides with animal
-        if (distance < collisionRadius + animal.size) {
-            // Consume the animal
-            const value = animal.consume();
-            stats.moneyCollected += value;
-            gameState.currentScore = stats.moneyCollected;
-            
-            // Visual feedback for eating
-            showEatEffect(animal.mesh.position, value, animal.stablecoin);
-            
-            // Update stats
-            updateStats();
-            
-            console.log(`Ate ${animal.animalType} worth $${value.toFixed(2)}! Total: $${stats.moneyCollected.toFixed(2)}`);
-        }
-    });
-}
-
 // Show visual effect when eating an animal
 function showEatEffect(position, value, stablecoin) {
     // Create particle burst effect
@@ -5081,10 +5036,6 @@ function setupWebSocketListeners() {
 // Connection control functions (delegates to wsManager)
 function connectWebSocket() {
     wsManager.connect();
-}
-
-function disconnectWebSocket() {
-    wsManager.disconnect();
 }
 
 // Clear all entities (keep border trees but remove fruits, clear animals)
