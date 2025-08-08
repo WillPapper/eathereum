@@ -1,14 +1,14 @@
 # Eathereum 🌳
 
-A competitive PVP game where you consume smaller stablecoin transfers and avoid larger ones, fighting to grow wealthier before getting eaten in a ruthless world of digital currency.
+A PVP game where you consume smaller stablecoin transfers and avoid larger ones to grow before getting eaten.
 
 ## Overview
 
-Eathereum is a real-time multiplayer survival game where every stablecoin transaction (USDC, USDT, DAI) on the Base network becomes a living creature. You control an animal in this blockchain ecosystem, consuming smaller transactions to grow your wealth while avoiding larger predators that would devour you. It's eat or be eaten in this competitive world where size equals value and only the strongest survive.
+Eathereum is a multiplayer game built on real-time Base network data. Each stablecoin transaction (USDC, USDT, DAI) becomes an animal in the game world. Players control an animal that grows by eating smaller transactions and dies when eaten by larger ones. Size correlates to transaction value.
 
 ## Goal
 
-To transform blockchain activity into an addictive competitive experience, inspired by visualizers like Bitlisten that make cryptocurrency transactions tangible. While Bitlisten turns Bitcoin transactions into musical notes, Eathereum evolves the concept into a brutal PVP arena where players directly compete with real-time stablecoin flows. Every transaction is an opportunity or a threat, creating a visceral understanding of DeFi activity through survival gameplay.
+To gamify blockchain data into a competitive experience. Inspired by Bitlisten (which converts Bitcoin transactions to audio), Eathereum converts stablecoin transactions into gameplay entities. Players compete in real-time against actual transaction flows on Base, making DeFi activity tangible through game mechanics.
 
 ## Architecture
 
@@ -81,23 +81,22 @@ To transform blockchain activity into an addictive competitive experience, inspi
 
 **Visualization Engine**
 - **Framework**: Three.js for 3D graphics
-- **Architecture**: Vanilla JavaScript for performance
+- **Architecture**: Vanilla JavaScript
 - **Key Features**:
-  - Procedurally generated garden environment
-  - Real-time transaction visualization as animals
-  - Size-based gameplay (eat smaller, avoid larger)
-  - Power-up system with special fruits
-  - Mobile-optimized touch controls
+  - Procedural terrain generation
+  - Transaction-to-entity mapping
+  - Size-based collision detection
+  - Power-up system
+  - Mobile touch controls
 
 **Game Mechanics**
-- **PVP Competition**: Every player fights for dominance in the same arena
-- **Survival Gameplay**: Consume smaller transactions to grow, avoid larger ones or die
-- **Animals**: Each represents a real stablecoin transaction
-  - Size = transaction value (bigger = more dangerous)
-  - Color = stablecoin type (USDC=blue, USDT=green, DAI=gold)
-  - AI-controlled with predatory behavior patterns
-- **Growth System**: Your size is your score - eat to grow wealthy or be eaten
-- **Power-ups**: Rare fruits grant temporary advantages in the fight for survival
+- **Core Loop**: Eat smaller entities, avoid larger ones
+- **Entities**: Real stablecoin transactions mapped to animals
+  - Size: Log scale of transaction value
+  - Color: Stablecoin type (USDC=blue, USDT=green, DAI=gold)
+  - Movement: AI pathfinding with collision avoidance
+- **Scoring**: Player size = accumulated value
+- **Power-ups**: 2x size (leverage), 2x speed (speedrun), extra lives
 
 ### Data Flow
 
@@ -123,38 +122,32 @@ To transform blockchain activity into an addictive competitive experience, inspi
 
 ## Features
 
-### Competitive Gameplay
-- **Real-time PVP**: Compete against other players in live matches
-- **Survival mechanics**: Eat smaller transactions or be eaten by larger ones
-- **Wealth accumulation**: Your size represents your accumulated wealth
-- **Leaderboard system**: Track the wealthiest survivors
+### Gameplay
+- Eat smaller transactions to grow
+- Avoid larger transactions to survive
+- Collect power-ups for temporary advantages
+- Alliance mode: smaller entities team up when threatened
 
-### Strategic Elements
-- **Risk vs Reward**: Chase valuable transactions while avoiding threats
-- **Power-up control**: Leverage fruits double your size, speedrun fruits double your speed
-- **Alliance dynamics**: Smaller creatures team up against dominant predators
-- **Market awareness**: React to real stablecoin flow patterns on Base
+### UI Components
+- Live transaction feed with Basescan links
+- Market volume counters per stablecoin
+- Queue status indicator
+- Player stats (size, lives, score)
 
-### Trading Feed UI
-- Live transaction ticker showing incoming transfers
-- Market volume tracking by stablecoin type
-- Queue system for spawn management
-- Links to Basescan for transaction verification
-
-### Mobile Support
-- Omnidirectional touch controls
-- Responsive UI scaling
-- Optimized performance for mobile devices
+### Controls
+- **Desktop**: WASD movement, QE rotation, mouse camera
+- **Mobile**: Omnidirectional touch movement
+- **Common**: Click/tap to start, any key to restart
 
 ## Design Philosophy
 
-Eathereum weaponizes blockchain data into competitive gameplay:
-- **Size = Power**: Transaction value directly translates to predatory dominance
-- **Survival of the Richest**: Only the most strategic players accumulate wealth
-- **Real Stakes**: Every creature represents actual money flowing through Base
-- **Brutal Simplicity**: Eat or be eaten - no complex rules, just pure competition
+Eathereum maps blockchain data directly to game mechanics:
+- **Size = Value**: Transaction amounts determine entity size
+- **Real-time data**: Every entity represents an actual Base transaction
+- **Simple rules**: Eat smaller, avoid larger
+- **Competitive scoring**: Player size reflects accumulated transaction value
 
-By turning DeFi activity into a PVP arena, players viscerally understand market dynamics through the universal language of survival.
+The game provides an intuitive interface for understanding DeFi activity through gameplay.
 
 ## License
 
