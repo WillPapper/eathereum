@@ -47,7 +47,7 @@ impl RedisConsumer {
         info!("Consumer group ready, starting to consume messages...");
 
         let last_id = ">".to_string();
-        
+
         loop {
             let options = StreamReadOptions::default()
                 .group(&self.config.consumer_group, &self.config.consumer_name)
@@ -79,7 +79,11 @@ impl RedisConsumer {
     async fn ensure_consumer_group(&mut self) -> Result<()> {
         let _: Result<(), redis::RedisError> = self
             .connection
-            .xgroup_create_mkstream(&self.config.redis_stream_key, &self.config.consumer_group, "$")
+            .xgroup_create_mkstream(
+                &self.config.redis_stream_key,
+                &self.config.consumer_group,
+                "$",
+            )
             .await
             .or_else(|e| {
                 if e.to_string().contains("BUSYGROUP") {
@@ -90,12 +94,12 @@ impl RedisConsumer {
                     Err(e)
                 }
             });
-        
+
         info!("Starting Redis stream consumer:");
         info!("  Stream: {}", self.config.redis_stream_key);
         info!("  Consumer Group: {}", self.config.consumer_group);
         info!("  Consumer Name: {}", self.config.consumer_name);
-        
+
         Ok(())
     }
 
@@ -126,7 +130,11 @@ impl RedisConsumer {
 
                     let _: Result<(), redis::RedisError> = self
                         .connection
-                        .xack(&self.config.redis_stream_key, &self.config.consumer_group, &[&stream_id.id])
+                        .xack(
+                            &self.config.redis_stream_key,
+                            &self.config.consumer_group,
+                            &[&stream_id.id],
+                        )
                         .await;
                 } else {
                     warn!("Failed to parse message data from stream");
@@ -165,9 +173,7 @@ fn parse_stream_data(data: &HashMap<String, redis::Value>) -> Option<Transaction
         })
     };
 
-    let get_u64 = |key: &str| -> Option<u64> { 
-        get_string(key).and_then(|s| s.parse().ok()) 
-    };
+    let get_u64 = |key: &str| -> Option<u64> { get_string(key).and_then(|s| s.parse().ok()) };
 
     Some(TransactionData {
         stablecoin: get_string("stablecoin")?,

@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
     config.log_config();
 
     let client_manager = Arc::new(ClientManager::new());
-    
+
     let mut redis_consumer = RedisConsumer::new(config.clone(), client_manager.clone()).await?;
 
     let redis_handle = tokio::spawn(async move {

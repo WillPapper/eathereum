@@ -1,10 +1,10 @@
+use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info};
 use warp::ws::{Message, WebSocket};
 use warp::Filter;
-use futures_util::{SinkExt, StreamExt};
 
 use crate::transaction::TransactionData;
 
@@ -27,7 +27,10 @@ impl ClientManager {
         let mut clients = self.clients.write().await;
         clients.insert(client_id.clone(), sender);
         let count = clients.len();
-        info!("🔌 Client {} connected (total clients: {})", client_id, count);
+        info!(
+            "🔌 Client {} connected (total clients: {})",
+            client_id, count
+        );
         count
     }
 
@@ -35,7 +38,10 @@ impl ClientManager {
         let mut clients = self.clients.write().await;
         clients.remove(client_id);
         let count = clients.len();
-        info!("🔌 Client {} disconnected (remaining clients: {})", client_id, count);
+        info!(
+            "🔌 Client {} disconnected (remaining clients: {})",
+            client_id, count
+        );
         count
     }
 
@@ -102,9 +108,7 @@ impl WebSocketServer {
         let routes = ws_route.with(cors);
 
         info!("WebSocket server starting on port {}", self.port);
-        warp::serve(routes)
-            .run(([0, 0, 0, 0], self.port))
-            .await;
+        warp::serve(routes).run(([0, 0, 0, 0], self.port)).await;
     }
 }
 
@@ -117,7 +121,7 @@ fn with_clients(
 async fn handle_client(ws: WebSocket, client_manager: Arc<ClientManager>) {
     let (mut client_ws_tx, mut client_ws_rx) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel();
-    
+
     let client_id = uuid::Uuid::new_v4().to_string();
     client_manager.add_client(client_id.clone(), tx).await;
 
