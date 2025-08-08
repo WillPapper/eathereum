@@ -50,10 +50,14 @@ class WebSocketManager extends EventTarget {
         this.stats.connectionAttempts++;
         
         // Determine WebSocket URL based on environment
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.hostname;
-        const port = window.location.hostname === 'localhost' ? ':8080' : '';
-        const wsUrl = `${protocol}//${host}${port}${this.config.wsEndpoint}`;
+        let wsUrl;
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            // Local development
+            wsUrl = `ws://localhost:8080${this.config.wsEndpoint}`;
+        } else {
+            // Production - use the game server on Render
+            wsUrl = `wss://game-server-i4ne.onrender.com${this.config.wsEndpoint}`;
+        }
         
         console.log(`Connecting to WebSocket: ${wsUrl}`);
         this.updateStatus('connecting');

@@ -75,9 +75,23 @@ Base Network → Block Monitor → Redis Stream → Game Server → WebSocket �
 
 ## Production Deployment
 
-For production, update the WebSocket URL in visualizer.js:
+The visualizer is already configured to connect to the production game server:
+
+- **Game Server**: https://game-server-i4ne.onrender.com
+- **WebSocket Endpoint**: wss://game-server-i4ne.onrender.com/ws
+
+The websocket.js automatically uses:
+- **Local development**: ws://localhost:8080/ws
+- **Production**: wss://game-server-i4ne.onrender.com/ws
+
+## Testing the Production Connection
+
+1. Open `test-connection.html` in your browser
+2. Click "Connect to Production" to test the live connection
+3. You should see real blockchain transactions appearing in the log
+
+Or test directly:
 ```javascript
-const wsUrl = window.location.hostname === 'localhost' 
-    ? 'ws://localhost:8080/ws'
-    : `wss://your-game-server.onrender.com/ws`; // Update this
+// In browser console
+wsManager.connect(); // Connects to production if not on localhost
 ```
