@@ -6,6 +6,9 @@ let isPaused = false;
 let gameOver = false;
 let moneyCollected = 0;
 
+// Mobile control settings (can be overridden via URL params)
+let forceOmnidirectional = null; // null = auto-detect, true = force on, false = force off
+
 // Player controls (ground-based animal)
 let playerControls = {
     moveForward: false,
@@ -5219,7 +5222,48 @@ function setupPlayerControls() {
     // Touch controls for mobile (ground movement)
     let touchStartX = 0;
     let touchStartY = 0;
-    let isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // Check URL params for manual override
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('omnidirectional')) {
+        forceOmnidirectional = urlParams.get('omnidirectional') === 'true';
+    }
+    
+    // Better mobile detection using feature detection
+    const isMobile = (() => {
+        // Check for manual override first
+        if (forceOmnidirectional !== null) {
+            return forceOmnidirectional;
+        }
+        
+        // Check for touch capability
+        const hasTouch = ('ontouchstart' in window) || 
+                        (navigator.maxTouchPoints > 0) || 
+                        (navigator.msMaxTouchPoints > 0);
+        
+        // Check screen size (mobile typically < 768px width)
+        const isSmallScreen = window.innerWidth <= 768;
+        
+        // Check for mobile-specific features
+        const hasMobileOrientation = typeof window.orientation !== 'undefined';
+        
+        // Check if it's likely a mobile device (not a touchscreen laptop)
+        // Touchscreen laptops typically have larger screens and mouse support
+        const hasMouseSupport = matchMedia('(pointer:fine)').matches;
+        const hasCoarsePointer = matchMedia('(pointer:coarse)').matches;
+        
+        // Additional checks for better detection
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.platform) || 
+                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const isAndroid = /Android/.test(navigator.userAgent);
+        
+        // A device is considered mobile if:
+        // - It's explicitly iOS or Android
+        // - OR it has touch AND (small screen OR mobile orientation API)
+        // - OR it has touch AND coarse pointer (finger) but no fine pointer (mouse)
+        return isIOS || isAndroid || 
+               (hasTouch && (isSmallScreen || hasMobileOrientation || (hasCoarsePointer && !hasMouseSupport)));
+    })();
     
     // Add mobile-specific movement state
     if (isMobile) {
@@ -5228,6 +5272,48 @@ function setupPlayerControls() {
             angle: 0,
             magnitude: 0
         };
+        
+        // Create visual joystick indicator for mobile
+        const joystickContainer = document.createElement('div');
+        joystickContainer.id = 'touch-joystick';
+        joystickContainer.style.cssText = `
+            position: fixed;
+            width: 120px;
+            height: 120px;
+            border: 3px solid rgba(0, 255, 200, 0.3);
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.2);
+            display: none;
+            pointer-events: none;
+            z-index: 1000;
+        `;
+        
+        const joystickKnob = document.createElement('div');
+        joystickKnob.id = 'touch-joystick-knob';
+        joystickKnob.style.cssText = `
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(0, 255, 200, 0.6);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: none;
+        `;
+        
+        joystickContainer.appendChild(joystickKnob);
+        document.body.appendChild(joystickContainer);
+        
+        playerControls.joystickElements = {
+            container: joystickContainer,
+            knob: joystickKnob
+        };
+        
+        // Log detection result for debugging
+        console.log('Mobile device detected - enabling omnidirectional movement');
+    } else if (('ontouchstart' in window) || (navigator.maxTouchPoints > 0)) {
+        console.log('Touch-enabled desktop detected - using 4-direction movement');
     }
     
     canvas.addEventListener('touchstart', (event) => {
@@ -5237,6 +5323,17 @@ function setupPlayerControls() {
             
             if (isMobile) {
                 playerControls.mobileMovement.active = true;
+                
+                // Show joystick at touch position
+                if (playerControls.joystickElements) {
+                    const joystick = playerControls.joystickElements.container;
+                    joystick.style.left = (touchStartX - 60) + 'px';
+                    joystick.style.top = (touchStartY - 60) + 'px';
+                    joystick.style.display = 'block';
+                    
+                    // Reset knob position
+                    playerControls.joystickElements.knob.style.transform = 'translate(-50%, -50%)';
+                }
             }
         }
     });
@@ -5258,10 +5355,24 @@ function setupPlayerControls() {
                     // Calculate angle in radians (0 = right, PI/2 = up, PI = left, -PI/2 = down)
                     playerControls.mobileMovement.angle = Math.atan2(-deltaY, deltaX);
                     // Normalize magnitude (cap at 100 pixels distance)
-                    playerControls.mobileMovement.magnitude = Math.min(distance / 100, 1.0);
+                    const cappedDistance = Math.min(distance, 100);
+                    playerControls.mobileMovement.magnitude = cappedDistance / 100;
                     playerControls.mobileMovement.active = true;
+                    
+                    // Update joystick knob position
+                    if (playerControls.joystickElements) {
+                        const knobX = (deltaX / distance) * Math.min(distance, 40);
+                        const knobY = (deltaY / distance) * Math.min(distance, 40);
+                        playerControls.joystickElements.knob.style.transform = 
+                            `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
+                    }
                 } else {
                     playerControls.mobileMovement.magnitude = 0;
+                    
+                    // Reset knob to center
+                    if (playerControls.joystickElements) {
+                        playerControls.joystickElements.knob.style.transform = 'translate(-50%, -50%)';
+                    }
                 }
             } else {
                 // Desktop touch (touchscreen laptops): Keep 4-direction movement
@@ -5300,6 +5411,12 @@ function setupPlayerControls() {
                 // Mobile: Stop omnidirectional movement
                 playerControls.mobileMovement.active = false;
                 playerControls.mobileMovement.magnitude = 0;
+                
+                // Hide joystick
+                if (playerControls.joystickElements) {
+                    playerControls.joystickElements.container.style.display = 'none';
+                    playerControls.joystickElements.knob.style.transform = 'translate(-50%, -50%)';
+                }
             } else {
                 // Desktop touch: Stop 4-direction movement
                 playerControls.moveForward = false;
