@@ -2220,49 +2220,28 @@ function flashScreen(color, duration) {
 function handleGameOver() {
     gameOver = true;
     playerControls.isPlaying = false;
+    gameState.isGameOver = true;
     
-    // Create game over screen
-    const gameOverDiv = document.createElement('div');
-    gameOverDiv.id = 'game-over';
-    gameOverDiv.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(255, 0, 0, 0.9);
-        color: white;
-        padding: 40px;
-        border-radius: 20px;
-        text-align: center;
-        font-size: 24px;
-        z-index: 10000;
-        box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
-    `;
+    // Update game state
+    gameState.currentScore = moneyCollected;
+    gameState.endTime = Date.now();
     
-    gameOverDiv.innerHTML = `
-        <h1 style="margin: 0 0 20px 0; font-size: 48px;">GAME OVER!</h1>
-        <p style="margin: 20px 0;">You were eaten by a larger animal!</p>
-        <p style="margin: 20px 0; font-size: 32px; color: #FFD700;">💰 Final Score: $${moneyCollected.toFixed(2)}</p>
-        <p style="margin: 10px 0; font-size: 18px;">Your Size: ${playerControls.size.toFixed(2)}</p>
-        <button onclick="location.reload()" style="
-            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            border-radius: 10px;
-            font-size: 20px;
-            cursor: pointer;
-            margin-top: 20px;
-        ">🔄 Play Again</button>
-    `;
+    // Update high score
+    if (gameState.currentScore > gameState.highScore) {
+        gameState.highScore = gameState.currentScore;
+        localStorage.setItem('stablecoinHuntHighScore', gameState.highScore.toString());
+    }
     
-    document.body.appendChild(gameOverDiv);
+    // Use the new game over screen with click/key listeners
+    showGameOverScreen('larger animal');
     
     // Stop animation
     if (animationId) {
         cancelAnimationFrame(animationId);
         animationId = null;
     }
+    
+    console.log(`GAME OVER! Eaten by larger animal. Score: $${moneyCollected.toFixed(2)}`);
 }
 
 // Initialize Three.js scene
@@ -4883,9 +4862,49 @@ function showGameOverScreen(reason) {
                     🏡 Exit to Garden
                 </button>
             </div>
+            <p style="margin-top: 20px; font-size: 14px; color: #FFD700;">Press any key or click to try again</p>
         </div>
     `;
     document.body.appendChild(gameOverDiv);
+    
+    // Store the listener function globally so we can remove it later
+    window.gameOverRestartListener = (event) => {
+        // Stop event propagation
+        event.stopPropagation();
+        
+        // Don't restart on Escape key
+        if (event.type === 'keydown' && event.code === 'Escape') {
+            return;
+        }
+        // Don't restart if clicking a button (let button handlers work)
+        if (event.type === 'click' && (event.target.tagName === 'BUTTON' || event.target.closest('button'))) {
+            return;
+        }
+        
+        console.log('Restarting game from interaction:', event.type, event.code || 'click');
+        
+        // Remove listeners first
+        document.removeEventListener('keydown', window.gameOverRestartListener, true);
+        document.removeEventListener('click', window.gameOverRestartListener, true);
+        window.removeEventListener('keydown', window.gameOverRestartListener, true);
+        window.removeEventListener('click', window.gameOverRestartListener, true);
+        
+        // Clear the reference
+        delete window.gameOverRestartListener;
+        
+        // Restart the game
+        window.restartGame();
+    };
+    
+    // Add listeners after a short delay to avoid accidental restarts
+    // Use capture phase to ensure we get the events first
+    setTimeout(() => {
+        console.log('Adding game over interaction listeners');
+        document.addEventListener('keydown', window.gameOverRestartListener, true);
+        document.addEventListener('click', window.gameOverRestartListener, true);
+        window.addEventListener('keydown', window.gameOverRestartListener, true);
+        window.addEventListener('click', window.gameOverRestartListener, true);
+    }, 500);
     
     // Make plants glow red to show danger
     particles.forEach(plant => {
@@ -4920,6 +4939,9 @@ function restartGame() {
     location.reload();
 }
 
+// Make restartGame globally accessible
+window.restartGame = restartGame;
+
 // Exit to garden view
 function exitToGarden() {
     // Remove game over screen
@@ -4936,6 +4958,9 @@ function exitToGarden() {
     gameState.currentScore = 0;
     updateStats();
 }
+
+// Make exitToGarden globally accessible
+window.exitToGarden = exitToGarden;
 
 // Removed old bird flight physics function
 
