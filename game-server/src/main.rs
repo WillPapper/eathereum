@@ -30,6 +30,15 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     info!("Starting Game Server");
+    
+    let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string());
+    let port = std::env::var("PORT")
+        .unwrap_or_else(|_| "8080".to_string())
+        .parse::<u16>()?;
+    let health_port = std::env::var("HEALTH_PORT")
+        .unwrap_or_else(|_| "8081".to_string())
+        .parse::<u16>()?;
+    
     info!("Configuration:");
     info!("  Redis URL: {}", if redis_url.contains("@") {
         let parts: Vec<&str> = redis_url.split('@').collect();
@@ -44,14 +53,6 @@ async fn main() -> Result<()> {
     info!("  Stream Key: stablecoin:transactions");
     info!("  WebSocket Port: {}", port);
     info!("  Health Port: {}", health_port);
-
-    let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string());
-    let port = std::env::var("PORT")
-        .unwrap_or_else(|_| "8080".to_string())
-        .parse::<u16>()?;
-    let health_port = std::env::var("HEALTH_PORT")
-        .unwrap_or_else(|_| "8081".to_string())
-        .parse::<u16>()?;
 
     let clients: Clients = Arc::new(RwLock::new(HashMap::new()));
 
@@ -137,9 +138,9 @@ async fn consume_redis_stream(mut conn: MultiplexedConnection, clients: Clients)
     
     info!("Consumer group ready, starting to consume messages...");
 
-    let mut last_id = ">".to_string();
+    let last_id = ">".to_string();
     let mut total_messages = 0u64;
-    let mut last_log_time = std::time::Instant::now().to_string();
+    let mut last_log_time = std::time::Instant::now();
 
     loop {
         let options = StreamReadOptions::default()
@@ -241,7 +242,7 @@ fn parse_stream_data(data: &HashMap<String, redis::Value>) -> Option<Transaction
         amount: get_string("amount")?,
         from: get_string("from")?,
         to: get_string("to")?,
-        block_number: get_u64("block_number")?,
+        block_number: get_u64("block")?,  // Block-monitor sends "block", not "block_number"
         tx_hash: get_string("tx_hash")?,
     })
 }
