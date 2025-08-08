@@ -25,9 +25,16 @@ export class SceneManager {
     }
     
     setupCamera() {
+        const container = document.getElementById('canvas-container');
+        let aspect = window.innerWidth / window.innerHeight;
+        if (container) {
+            const rect = container.getBoundingClientRect();
+            aspect = rect.width / rect.height;
+        }
+        
         this.camera = new THREE.PerspectiveCamera(
             75,
-            window.innerWidth / window.innerHeight,
+            aspect,
             0.1,
             1000
         );
@@ -40,15 +47,20 @@ export class SceneManager {
             antialias: true,
             powerPreference: "high-performance"
         });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        
         const container = document.getElementById('canvas-container');
         if (container) {
+            // Size to container
+            const rect = container.getBoundingClientRect();
+            this.renderer.setSize(rect.width, rect.height);
             container.appendChild(this.renderer.domElement);
         } else {
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(this.renderer.domElement);
         }
+        
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     }
     
     setupLights() {
@@ -139,9 +151,17 @@ export class SceneManager {
     }
     
     onWindowResize() {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        const container = document.getElementById('canvas-container');
+        if (container) {
+            const rect = container.getBoundingClientRect();
+            this.camera.aspect = rect.width / rect.height;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(rect.width, rect.height);
+        } else {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        }
     }
     
     render() {
