@@ -883,7 +883,15 @@ class TransactionAnimal {
     handleAllianceMode() {
         // If this animal has a merge partner, seek them
         if (this.aiState === 'merging' && this.mergePartner) {
-            this.seekMergePartner();
+            // Verify partner still has us as their merge partner
+            if (this.mergePartner.mergePartner !== this) {
+                console.log(`⚠️ ${this.animalType} lost mutual partnership with ${this.mergePartner.animalType}, resetting`);
+                this.aiState = 'roaming';
+                this.mergePartner = null;
+                this.hasMerged = false;
+            } else {
+                this.seekMergePartner();
+            }
         }
         // Otherwise handle survival mode behaviors too
         else if (difficultyLevel === 'survival') {
@@ -3395,6 +3403,16 @@ function checkDifficultyScaling() {
         difficultyLevel = 'survival';
         allianceActive = false;
         console.log(`⚔️ Alliance mode ended. Competitive balance restored.`);
+        
+        // Clean up any animals still in merging state
+        animals.forEach(animal => {
+            if (animal.aiState === 'merging') {
+                animal.aiState = 'roaming';
+                animal.mergePartner = null;
+                animal.hasMerged = false;
+                console.log(`🔄 Reset ${animal.animalType} from merging to roaming`);
+            }
+        });
     }
     // SURVIVAL MODE - Moderate dominance (50-90% edible)
     else if (edibleRatio > EDIBLE_THRESHOLD && difficultyLevel === 'normal') {
@@ -3590,6 +3608,15 @@ function checkAllianceProgress() {
     if (competitiveAnimals >= 2) {
         allianceActive = false;
         console.log(`⚔️ Alliance successful! ${competitiveAnimals} animals can now challenge you.`);
+        
+        // Clean up any remaining merge states
+        animals.forEach(animal => {
+            if (animal.aiState === 'merging') {
+                animal.aiState = 'roaming';
+                animal.mergePartner = null;
+                animal.hasMerged = false;
+            }
+        });
     } else if (allianceActive && animals.length > 4) {
         // Continue merging if needed
         setTimeout(() => {
