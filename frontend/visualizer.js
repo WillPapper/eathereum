@@ -4821,8 +4821,8 @@ function showGameOverScreen(reason) {
             <h1 style="margin: 0 0 20px 0; font-size: 48px;">💀 GAME OVER 💀</h1>
             <p style="font-size: 24px; margin: 10px 0;">${deathMessage}</p>
             <div style="margin: 30px 0;">
-                <p style="font-size: 20px; margin: 10px 0;">Final Score: <span style="color: #FFD700; font-size: 32px; font-weight: bold;">$${gameState.currentScore.toFixed(2)}</span></p>
-                <p style="font-size: 16px; margin: 10px 0;">High Score: <span style="color: #FFD700;">$${gameState.highScore.toFixed(2)}</span></p>
+                <p style="font-size: 20px; margin: 10px 0;">Final Score: <span style="color: #FFD700; font-size: 32px; font-weight: bold;">$${gameState.currentScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
+                <p style="font-size: 16px; margin: 10px 0;">High Score: <span style="color: #FFD700;">$${gameState.highScore.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></p>
                 ${gameState.startTime ? `<p style="font-size: 14px; margin: 10px 0;">Survived: ${Math.floor((gameState.endTime - gameState.startTime) / 1000)} seconds</p>` : ''}
             </div>
             <div style="margin-top: 30px;">
