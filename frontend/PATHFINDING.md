@@ -22,10 +22,18 @@ Animals smaller than the player will:
 ### 3. Predator Behavior (Larger Animals)
 Animals larger than the player will:
 - **Detect** player at 15 units distance
-- **Chase** when player is within 20 units
-- **Move at 85% player speed** - allowing escape with skill
+- **Chase** when player is within range (see below)
 - **Predict Movement** - aim where player is going
 - **Smooth Pursuit** - gradual turning for realistic movement
+
+#### Size-Based Chase Adjustments
+Animals that are MUCH bigger than you are less aggressive:
+- **1-2x your size**: Normal chase range (20 units), normal speed
+- **2-3x your size**: 75-50% chase range (15-10 units), 80-60% speed
+- **3-4x your size**: 50-25% chase range (10-5 units), 60-40% speed
+- **4x+ your size**: 25% chase range (5 units), 40% speed
+
+This makes huge predators less threatening - they're lazy and only chase if you get very close!
 
 ### 4. Speed System
 

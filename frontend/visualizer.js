@@ -916,14 +916,30 @@ class TransactionAnimal {
             this.lastPlayerSighting = playerControls.mesh.position.clone();
         }
         // PREDATOR BEHAVIOR - Larger animals chase (also check for newly larger animals)
-        else if (isLarger && (distanceToPlayer < this.chaseRange || this.behaviorState === 'fleeing')) {
+        // Reduce chase range for animals that are MUCH bigger (less aggressive when huge)
+        const sizeRatio = this.size / playerControls.size;
+        let adjustedChaseRange = this.chaseRange;
+        
+        // If animal is more than 2x player size, reduce chase range
+        if (sizeRatio > 2.0) {
+            // The bigger the size difference, the smaller the chase range
+            // At 2x size: 75% of normal range, at 3x: 50%, at 4x+: 25%
+            const rangeMultiplier = Math.max(0.25, 1.0 - (sizeRatio - 2.0) * 0.25);
+            adjustedChaseRange = this.chaseRange * rangeMultiplier;
+        }
+        
+        if (isLarger && (distanceToPlayer < adjustedChaseRange || this.behaviorState === 'fleeing')) {
             // Check if behavior needs to change (was fleeing but now should chase)
             if (this.behaviorState === 'fleeing') {
                 console.log(`🔄 ${this.animalType} switching from fleeing to chasing - player shrank!`);
             }
             if (this.behaviorState !== 'chasing') {
                 this.behaviorState = 'chasing';
-                console.log(`🎯 ${this.animalType} hunting player at distance ${distanceToPlayer.toFixed(1)}`);
+                if (sizeRatio > 2.0) {
+                    console.log(`🎯 ${this.animalType} lazily hunting player (${sizeRatio.toFixed(1)}x bigger, range: ${adjustedChaseRange.toFixed(1)})`);
+                } else {
+                    console.log(`🎯 ${this.animalType} hunting player at distance ${distanceToPlayer.toFixed(1)}`);
+                }
             }
             
             // Calculate predictive chase direction (lead the target)
@@ -945,8 +961,18 @@ class TransactionAnimal {
             this.targetDirection += directionDiff * 0.2; // Moderate turning speed
             
             // Use fixed chase speed for this animal type
-            // This ensures predators don't speed up when player gets speed boosts
-            this.speed = this.chaseSpeed || 3.5; // Use animal's chase speed or default to 35% of base player speed
+            // Further reduce speed for animals that are MUCH bigger
+            let effectiveChaseSpeed = this.chaseSpeed || 3.5;
+            
+            // If animal is more than 2x player size, slow them down even more
+            if (sizeRatio > 2.0) {
+                // The bigger they are relative to player, the slower they chase
+                // At 2x: 80% speed, at 3x: 60%, at 4x+: 40% of their normal chase speed
+                const speedMultiplier = Math.max(0.4, 1.0 - (sizeRatio - 2.0) * 0.2);
+                effectiveChaseSpeed = effectiveChaseSpeed * speedMultiplier;
+            }
+            
+            this.speed = effectiveChaseSpeed;
             
             // Store last player sighting
             this.lastPlayerSighting = playerControls.mesh.position.clone();
