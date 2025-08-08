@@ -1717,12 +1717,33 @@ function updatePlayerMovement(delta) {
     // Apply movement
     const moveVector = new THREE.Vector3();
     
-    if (playerControls.moveForward) moveVector.add(forward);
-    if (playerControls.moveBackward) moveVector.sub(forward);
-    if (playerControls.moveLeft) moveVector.sub(right);
-    if (playerControls.moveRight) moveVector.add(right);
+    // Check if we're using mobile omnidirectional movement
+    const isMobile = playerControls.mobileMovement && playerControls.mobileMovement.active;
     
-    // Handle rotation with Q and E keys
+    if (isMobile) {
+        // Mobile: Use omnidirectional movement based on touch angle and magnitude
+        const angle = playerControls.mobileMovement.angle;
+        const magnitude = playerControls.mobileMovement.magnitude;
+        
+        if (magnitude > 0) {
+            // Calculate movement in world space relative to camera orientation
+            // Convert touch angle to movement direction
+            const touchForward = Math.cos(angle);
+            const touchRight = Math.sin(angle);
+            
+            // Apply movement relative to camera view
+            moveVector.add(forward.clone().multiplyScalar(-touchRight * magnitude));
+            moveVector.add(right.clone().multiplyScalar(touchForward * magnitude));
+        }
+    } else {
+        // Desktop: Use traditional 4-direction keyboard/touch movement
+        if (playerControls.moveForward) moveVector.add(forward);
+        if (playerControls.moveBackward) moveVector.sub(forward);
+        if (playerControls.moveLeft) moveVector.sub(right);
+        if (playerControls.moveRight) moveVector.add(right);
+    }
+    
+    // Handle rotation with Q and E keys (desktop only)
     if (playerControls.rotateLeft) {
         playerControls.rotation -= playerControls.rotationSpeed;
     }
@@ -1734,7 +1755,7 @@ function updatePlayerMovement(delta) {
         moveVector.normalize();
         moveVector.multiplyScalar(speed * delta);
         
-        // Apply boost if shift is held
+        // Apply boost if shift is held (desktop only)
         if (playerControls.boost) {
             moveVector.multiplyScalar(2);
         }
@@ -5198,11 +5219,25 @@ function setupPlayerControls() {
     // Touch controls for mobile (ground movement)
     let touchStartX = 0;
     let touchStartY = 0;
+    let isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // Add mobile-specific movement state
+    if (isMobile) {
+        playerControls.mobileMovement = {
+            active: false,
+            angle: 0,
+            magnitude: 0
+        };
+    }
     
     canvas.addEventListener('touchstart', (event) => {
         if (playerControls.isPlaying) {
             touchStartX = event.touches[0].clientX;
             touchStartY = event.touches[0].clientY;
+            
+            if (isMobile) {
+                playerControls.mobileMovement.active = true;
+            }
         }
     });
     
@@ -5215,24 +5250,39 @@ function setupPlayerControls() {
             const deltaX = touchX - touchStartX;
             const deltaY = touchY - touchStartY;
             
-            // Map touch to movement keys
-            if (Math.abs(deltaX) > Math.abs(deltaY)) {
-                // Horizontal movement
-                if (deltaX > 20) {
-                    playerControls.moveRight = true;
-                    playerControls.moveLeft = false;
-                } else if (deltaX < -20) {
-                    playerControls.moveLeft = true;
-                    playerControls.moveRight = false;
+            if (isMobile) {
+                // Mobile: Calculate angle and magnitude for omnidirectional movement
+                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                
+                if (distance > 10) { // Minimum distance threshold
+                    // Calculate angle in radians (0 = right, PI/2 = up, PI = left, -PI/2 = down)
+                    playerControls.mobileMovement.angle = Math.atan2(-deltaY, deltaX);
+                    // Normalize magnitude (cap at 100 pixels distance)
+                    playerControls.mobileMovement.magnitude = Math.min(distance / 100, 1.0);
+                    playerControls.mobileMovement.active = true;
+                } else {
+                    playerControls.mobileMovement.magnitude = 0;
                 }
             } else {
-                // Vertical movement
-                if (deltaY < -20) {
-                    playerControls.moveForward = true;
-                    playerControls.moveBackward = false;
-                } else if (deltaY > 20) {
-                    playerControls.moveBackward = true;
-                    playerControls.moveForward = false;
+                // Desktop touch (touchscreen laptops): Keep 4-direction movement
+                if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                    // Horizontal movement
+                    if (deltaX > 20) {
+                        playerControls.moveRight = true;
+                        playerControls.moveLeft = false;
+                    } else if (deltaX < -20) {
+                        playerControls.moveLeft = true;
+                        playerControls.moveRight = false;
+                    }
+                } else {
+                    // Vertical movement
+                    if (deltaY < -20) {
+                        playerControls.moveForward = true;
+                        playerControls.moveBackward = false;
+                    } else if (deltaY > 20) {
+                        playerControls.moveBackward = true;
+                        playerControls.moveForward = false;
+                    }
                 }
             }
             
@@ -5246,11 +5296,17 @@ function setupPlayerControls() {
     
     canvas.addEventListener('touchend', (event) => {
         if (playerControls.isPlaying) {
-            // Stop movement when touch ends
-            playerControls.moveForward = false;
-            playerControls.moveBackward = false;
-            playerControls.moveLeft = false;
-            playerControls.moveRight = false;
+            if (isMobile) {
+                // Mobile: Stop omnidirectional movement
+                playerControls.mobileMovement.active = false;
+                playerControls.mobileMovement.magnitude = 0;
+            } else {
+                // Desktop touch: Stop 4-direction movement
+                playerControls.moveForward = false;
+                playerControls.moveBackward = false;
+                playerControls.moveLeft = false;
+                playerControls.moveRight = false;
+            }
             playerControls.mouseX = 0;
             playerControls.mouseY = 0;
         }
