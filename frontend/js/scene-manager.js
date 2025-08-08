@@ -38,7 +38,7 @@ export class SceneManager {
             0.1,
             1000
         );
-        this.camera.position.set(0, 20, -30);
+        this.camera.position.set(0, 30, 40);
         this.camera.lookAt(0, 0, 0);
     }
     

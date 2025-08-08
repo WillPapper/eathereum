@@ -189,7 +189,11 @@ export class EntityManager {
     spawnFromQueue(transactionData) {
         // Decide whether to spawn as plant or animal based on amount
         const amount = parseFloat(transactionData.amount);
-        console.log('Spawning from queue:', { amount, data: transactionData });
+        
+        // Skip zero or invalid amounts
+        if (!amount || amount <= 0) {
+            return;
+        }
         
         if (amount > 1000) {
             this.addPlant(transactionData);
@@ -308,6 +312,10 @@ export class EntityManager {
         const amount = parseFloat(data.amount);
         const size = Math.min(Math.max(Math.log10(amount + 1) * 0.5, 0.5), 5);
         
+        // Create animal group
+        const animalGroup = new THREE.Group();
+        
+        // Main body
         const geometry = new THREE.SphereGeometry(size, 12, 8);
         const material = new THREE.MeshPhongMaterial({
             color: CONFIG.STABLECOIN_COLORS[data.stablecoin] || 0xFFFFFF,
@@ -315,18 +323,43 @@ export class EntityManager {
             emissiveIntensity: 0.2
         });
         
-        const mesh = new THREE.Mesh(geometry, material);
+        const body = new THREE.Mesh(geometry, material);
+        body.castShadow = true;
+        animalGroup.add(body);
+        
+        // Add eyes
+        const eyeGeometry = new THREE.SphereGeometry(size * 0.15, 8, 8);
+        const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFFFF });
+        const pupilGeometry = new THREE.SphereGeometry(size * 0.08, 6, 6);
+        const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        
+        // Left eye
+        const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        leftEye.position.set(-size * 0.35, size * 0.3, size * 0.8);
+        animalGroup.add(leftEye);
+        
+        const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+        leftPupil.position.set(-size * 0.35, size * 0.3, size * 0.9);
+        animalGroup.add(leftPupil);
+        
+        // Right eye
+        const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        rightEye.position.set(size * 0.35, size * 0.3, size * 0.8);
+        animalGroup.add(rightEye);
+        
+        const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+        rightPupil.position.set(size * 0.35, size * 0.3, size * 0.9);
+        animalGroup.add(rightPupil);
         
         // Spawn at safe distance from player
         const angle = Math.random() * Math.PI * 2;
         const distance = 25 + Math.random() * 30;
-        mesh.position.x = Math.cos(angle) * distance;
-        mesh.position.y = size;
-        mesh.position.z = Math.sin(angle) * distance;
-        mesh.castShadow = true;
+        animalGroup.position.x = Math.cos(angle) * distance;
+        animalGroup.position.y = size;
+        animalGroup.position.z = Math.sin(angle) * distance;
         
         return {
-            mesh,
+            mesh: animalGroup,
             data,
             size,
             speed: Math.random() * 2 + 0.5,
@@ -400,6 +433,9 @@ export class EntityManager {
             // Move animal
             animal.mesh.position.x += Math.cos(animal.direction) * animal.speed * deltaTime;
             animal.mesh.position.z += Math.sin(animal.direction) * animal.speed * deltaTime;
+            
+            // Rotate to face direction of movement
+            animal.mesh.rotation.y = -animal.direction + Math.PI / 2;
             
             // Keep in bounds
             const distance = Math.sqrt(

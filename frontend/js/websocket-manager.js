@@ -61,8 +61,6 @@ export class WebSocketManager {
     }
     
     processTransaction(data) {
-        console.log('Processing transaction:', data);
-        
         // Update statistics
         if (window.game && window.game.gameState) {
             window.game.gameState.updateStats('total', 1);
