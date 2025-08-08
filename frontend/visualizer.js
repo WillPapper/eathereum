@@ -5229,40 +5229,26 @@ function setupPlayerControls() {
         forceOmnidirectional = urlParams.get('omnidirectional') === 'true';
     }
     
-    // Better mobile detection using feature detection
+    // Use Bowser library for reliable mobile detection
+    const browser = window.bowser.getParser(window.navigator.userAgent);
     const isMobile = (() => {
         // Check for manual override first
         if (forceOmnidirectional !== null) {
             return forceOmnidirectional;
         }
         
-        // Check for touch capability
-        const hasTouch = ('ontouchstart' in window) || 
-                        (navigator.maxTouchPoints > 0) || 
-                        (navigator.msMaxTouchPoints > 0);
+        // Use Bowser's built-in mobile detection
+        const platformType = browser.getPlatformType();
+        const isMobilePlatform = platformType === 'mobile' || platformType === 'tablet';
         
-        // Check screen size (mobile typically < 768px width)
-        const isSmallScreen = window.innerWidth <= 768;
+        // Double-check with Bowser's detailed detection
+        const parsedResult = browser.getResult();
+        const isMobileOS = parsedResult.os.name === 'iOS' || 
+                          parsedResult.os.name === 'Android' ||
+                          parsedResult.platform.type === 'mobile' ||
+                          parsedResult.platform.type === 'tablet';
         
-        // Check for mobile-specific features
-        const hasMobileOrientation = typeof window.orientation !== 'undefined';
-        
-        // Check if it's likely a mobile device (not a touchscreen laptop)
-        // Touchscreen laptops typically have larger screens and mouse support
-        const hasMouseSupport = matchMedia('(pointer:fine)').matches;
-        const hasCoarsePointer = matchMedia('(pointer:coarse)').matches;
-        
-        // Additional checks for better detection
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.platform) || 
-                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        const isAndroid = /Android/.test(navigator.userAgent);
-        
-        // A device is considered mobile if:
-        // - It's explicitly iOS or Android
-        // - OR it has touch AND (small screen OR mobile orientation API)
-        // - OR it has touch AND coarse pointer (finger) but no fine pointer (mouse)
-        return isIOS || isAndroid || 
-               (hasTouch && (isSmallScreen || hasMobileOrientation || (hasCoarsePointer && !hasMouseSupport)));
+        return isMobilePlatform || isMobileOS;
     })();
     
     // Add mobile-specific movement state
@@ -5311,9 +5297,11 @@ function setupPlayerControls() {
         };
         
         // Log detection result for debugging
-        console.log('Mobile device detected - enabling omnidirectional movement');
-    } else if (('ontouchstart' in window) || (navigator.maxTouchPoints > 0)) {
-        console.log('Touch-enabled desktop detected - using 4-direction movement');
+        const deviceInfo = browser.getResult();
+        console.log(`Mobile device detected: ${deviceInfo.platform.vendor} ${deviceInfo.os.name} - enabling omnidirectional movement`);
+    } else {
+        const deviceInfo = browser.getResult();
+        console.log(`Desktop device detected: ${deviceInfo.platform.type} - using 4-direction movement`);
     }
     
     canvas.addEventListener('touchstart', (event) => {
