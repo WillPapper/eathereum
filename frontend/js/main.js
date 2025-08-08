@@ -37,6 +37,9 @@ class StablecoinVisualizer {
         // Connect to WebSocket
         this.websocketManager.connect();
         
+        // Start rendering immediately so scene is visible
+        this.gameLoop.start();
+        
         // Show start screen
         this.uiManager.showStartScreen();
     }
@@ -149,22 +152,20 @@ class StablecoinVisualizer {
     }
     
     update(deltaTime) {
+        // Always update entities and scene even when not playing
+        this.entityManager.update(deltaTime, this.playerController);
+        this.sceneManager.updateDayNightCycle(Date.now());
+        
         if (this.gameState.isPaused || this.gameState.isGameOver) return;
         
-        // Update player
-        this.playerController.update(deltaTime, this.sceneManager.camera);
-        
-        // Update entities
-        this.entityManager.update(deltaTime, this.playerController);
-        
-        // Check collisions
-        this.checkCollisions();
+        // Only update player and check collisions when playing
+        if (this.playerController.controls.isPlaying) {
+            this.playerController.update(deltaTime, this.sceneManager.camera);
+            this.checkCollisions();
+        }
         
         // Update UI
         this.uiManager.update();
-        
-        // Update scene effects
-        this.sceneManager.updateDayNightCycle(Date.now());
     }
     
     checkCollisions() {
