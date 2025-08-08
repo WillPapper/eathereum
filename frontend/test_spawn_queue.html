@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spawn Queue Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        button {
+            background: #333;
+            color: #0f0;
+            border: 1px solid #0f0;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: monospace;
+        }
+        button:hover {
+            background: #444;
+        }
+        #stats {
+            background: #000;
+            padding: 15px;
+            border: 1px solid #0f0;
+            margin: 20px 0;
+            white-space: pre-wrap;
+        }
+        #log {
+            background: #000;
+            padding: 15px;
+            border: 1px solid #0f0;
+            height: 300px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        .log-entry {
+            padding: 2px 0;
+            border-bottom: 1px solid #333;
+        }
+        .spawn {
+            color: #0ff;
+        }
+        .queue {
+            color: #ff0;
+        }
+        input {
+            background: #222;
+            color: #0f0;
+            border: 1px solid #0f0;
+            padding: 5px;
+            margin: 0 5px;
+            width: 80px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Spawn Queue Test</h1>
+        
+        <div>
+            <h3>Player Size Simulation</h3>
+            <label>Player Size: <input type="number" id="playerSize" value="1.0" step="0.1" min="0.5" max="4"></label>
+            <button onclick="updatePlayerSize()">Update</button>
+        </div>
+        
+        <div>
+            <h3>Spawn Queue Controls</h3>
+            <button onclick="generateTransactions(5)">Generate 5 Transactions</button>
+            <button onclick="generateTransactions(20)">Generate 20 Transactions</button>
+            <button onclick="generateMixedTransactions()">Generate Mixed Sizes</button>
+            <button onclick="clearQueue()">Clear Queue</button>
+        </div>
+        
+        <div>
+            <h3>Configuration</h3>
+            <label>Spawn Delay (ms): <input type="number" id="spawnDelay" value="800" step="100" min="100" max="5000"></label>
+            <button onclick="updateSpawnDelay()">Update</button>
+            <br>
+            <label>Smaller Ratio: <input type="number" id="smallerRatio" value="0.65" step="0.05" min="0" max="1"></label>
+            <button onclick="updateSmallerRatio()">Update</button>
+        </div>
+        
+        <div id="stats">Loading stats...</div>
+        
+        <h3>Event Log</h3>
+        <div id="log"></div>
+    </div>
+    
+    <script src="websocket.js"></script>
+    <script>
+        // Mock playerControls for testing
+        window.playerControls = {
+            size: 1.0
+        };
+        
+        const log = document.getElementById('log');
+        const stats = document.getElementById('stats');
+        let spawnCount = 0;
+        let queueCount = 0;
+        
+        function addLog(message, type = '') {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry ' + type;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            log.insertBefore(entry, log.firstChild);
+            
+            // Keep only last 50 entries
+            while (log.children.length > 50) {
+                log.removeChild(log.lastChild);
+            }
+        }
+        
+        function updateStats() {
+            const queueStats = wsManager.getSpawnQueue().getStats();
+            stats.textContent = `
+📊 Spawn Queue Statistics
+========================
+Queue Length: ${queueStats.queueLength}
+Processing: ${queueStats.processing}
+Spawn Delay: ${queueStats.spawnDelay}ms
+
+Size Distribution in Queue:
+- Smaller than player: ${queueStats.smallerThanPlayer || 0}
+- Larger than player: ${queueStats.largerThanPlayer || 0}
+- Smaller Ratio: ${queueStats.smallerRatio || 'N/A'}
+
+Player Size: ${playerControls.size}
+Total Spawned: ${spawnCount}
+Total Queued: ${queueCount}
+            `;
+        }
+        
+        // Listen for spawn events
+        window.addEventListener('spawn:animal', (event) => {
+            const data = event.detail;
+            const amount = parseFloat(data.amount);
+            const amountLog = Math.log10(amount + 1);
+            const size = Math.min(Math.max(amountLog * 0.5 + 0.5, 0.5), 4);
+            const comparison = size < playerControls.size ? 'smaller' : 'larger';
+            
+            spawnCount++;
+            addLog(`Spawned: ${data.stablecoin} $${amount} (size: ${size.toFixed(2)}, ${comparison} than player)`, 'spawn');
+            updateStats();
+        });
+        
+        // Generate random transactions
+        function generateTransactions(count) {
+            for (let i = 0; i < count; i++) {
+                const transaction = generateRandomTransaction();
+                wsManager.spawnQueue.enqueue(transaction);
+                queueCount++;
+                
+                const amount = parseFloat(transaction.amount);
+                addLog(`Queued: ${transaction.stablecoin} $${amount}`, 'queue');
+            }
+            updateStats();
+        }
+        
+        function generateRandomTransaction() {
+            const stablecoins = ['USDC', 'USDT', 'DAI'];
+            const stablecoin = stablecoins[Math.floor(Math.random() * stablecoins.length)];
+            
+            let amount;
+            const rand = Math.random();
+            if (rand < 0.6) {
+                amount = (Math.random() * 999 + 1).toFixed(2);
+            } else if (rand < 0.85) {
+                amount = (Math.random() * 9000 + 1000).toFixed(2);
+            } else if (rand < 0.95) {
+                amount = (Math.random() * 40000 + 10000).toFixed(2);
+            } else {
+                amount = (Math.random() * 450000 + 50000).toFixed(2);
+            }
+            
+            return {
+                stablecoin: stablecoin,
+                amount: amount,
+                from: '0x' + Math.random().toString(16).substr(2, 40),
+                to: '0x' + Math.random().toString(16).substr(2, 40),
+                block_number: Math.floor(Math.random() * 1000000) + 30000000,
+                tx_hash: '0x' + Math.random().toString(16).substr(2, 64)
+            };
+        }
+        
+        function generateMixedTransactions() {
+            // Generate specific sizes relative to player
+            const playerSize = playerControls.size;
+            const transactions = [];
+            
+            // Generate smaller animals (65%)
+            for (let i = 0; i < 13; i++) {
+                // Calculate amount that will result in smaller size
+                const targetSize = playerSize * (0.3 + Math.random() * 0.6);
+                const amount = Math.pow(10, (targetSize - 0.5) / 0.5 - 1);
+                
+                const transaction = generateRandomTransaction();
+                transaction.amount = amount.toFixed(2);
+                transactions.push(transaction);
+            }
+            
+            // Generate larger animals (35%)
+            for (let i = 0; i < 7; i++) {
+                // Calculate amount that will result in larger size
+                const targetSize = playerSize * (1.2 + Math.random() * 2);
+                const amount = Math.pow(10, (targetSize - 0.5) / 0.5 - 1);
+                
+                const transaction = generateRandomTransaction();
+                transaction.amount = amount.toFixed(2);
+                transactions.push(transaction);
+            }
+            
+            // Shuffle and enqueue
+            transactions.sort(() => Math.random() - 0.5);
+            transactions.forEach(t => {
+                wsManager.spawnQueue.enqueue(t);
+                queueCount++;
+                addLog(`Queued: ${t.stablecoin} $${t.amount}`, 'queue');
+            });
+            
+            updateStats();
+        }
+        
+        function clearQueue() {
+            wsManager.spawnQueue.clear();
+            addLog('Queue cleared');
+            updateStats();
+        }
+        
+        function updatePlayerSize() {
+            const size = parseFloat(document.getElementById('playerSize').value);
+            playerControls.size = size;
+            addLog(`Player size updated to ${size}`);
+            updateStats();
+        }
+        
+        function updateSpawnDelay() {
+            const delay = parseInt(document.getElementById('spawnDelay').value);
+            wsManager.configureSpawnQueue({ spawnDelay: delay });
+            addLog(`Spawn delay updated to ${delay}ms`);
+            updateStats();
+        }
+        
+        function updateSmallerRatio() {
+            const ratio = parseFloat(document.getElementById('smallerRatio').value);
+            wsManager.configureSpawnQueue({ smallerRatio: ratio });
+            addLog(`Smaller ratio updated to ${ratio}`);
+            updateStats();
+        }
+        
+        // Update stats every second
+        setInterval(updateStats, 1000);
+        
+        // Initial stats
+        updateStats();
+        addLog('Spawn Queue Test initialized');
+    </script>
+</body>
+</html>
